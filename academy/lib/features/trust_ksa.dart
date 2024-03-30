@@ -38,7 +38,7 @@ class _TrustKsaState extends State<TrustKsa> {
       //  supportedLocales: context.supportedLocales,
         // locale: CookieManagerService.getLocale,
        // locale: context.locale,
-        title: 'ثقه العربية',
+        title: 'smart driver',
         debugShowCheckedModeBanner: false,
         // theme: Theme(),
         // navigatorKey: getIt<NavService>().navigatorKey,

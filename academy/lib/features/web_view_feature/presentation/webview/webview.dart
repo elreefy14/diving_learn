@@ -61,11 +61,11 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
             initialUrlRequest: URLRequest(
               url: Uri.parse(
                   WebViewUrlHandler.webViewUrl ??
-                      "https://smartdriver.ae/"
+                      "https://smartdriver.ae/login/?redirect_to=https%3A%2F%2Fsmartdriver.ae%2F"
               ),
             ),
             initialOptions: TrustKsaWebViewOptions().options,
-           // onProgressChanged: _onProgressChanged,
+            onProgressChanged: _onProgressChanged,
             onLoadError: _onError,
             onJsPrompt: (controller, jsPromptRequest) async {
               return Future.value(JsPromptResponse(handledByClient: true));
@@ -106,16 +106,16 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     _pullToRefreshController?.endRefreshing();
   }
 
-  // void _onProgressChanged(InAppWebViewController controller, int progress) {
-  //   //hwa 3amalha 70
-  //   //20 7lwa
-  //   if (progress > 20) {
-  //     UIHelpers.stopLoading();
-  //     _pullToRefreshController?.endRefreshing();
-  //   } else {
-  //     UIHelpers.showLoading();
-  //   }
-  // }
+  void _onProgressChanged(InAppWebViewController controller, int progress) {
+    //hwa 3amalha 70
+    //20 7lwa
+    if (progress > 70) {
+      UIHelpers.stopLoading();
+      _pullToRefreshController?.endRefreshing();
+    } else {
+      UIHelpers.showLoading();
+    }
+  }
 
 
   void _onWebViewCreated(InAppWebViewController controller) async{
