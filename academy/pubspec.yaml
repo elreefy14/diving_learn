@@ -23,14 +23,9 @@ dependencies:
 
   shared_preferences: ^2.2.0 # shared preferences persistence key value store
   webview_flutter: ^2.3.1
-  firebase_core: ^2.14.0 # to initialize firebase services
-  firebase_messaging: ^14.6.4 # fcm services
+  flutter_launcher_icons: ^0.13.1
+ # rename_app: 1.0.0 # rename app
 
-  flutter_launcher_icons: # change app icon
-  change_app_package_name: # change package name
-  rename_app: 1.0.0 # rename app
-
-  flutter_svg:  # display svg vectors
 
   flutter:
     sdk: flutter
@@ -40,20 +35,25 @@ dev_dependencies:
   flutter_lints:
 
 
+
   integration_test:
     sdk: flutter
 
   flutter_test:
     sdk: flutter
 
-flutter_icons:
-  android: true
-  ios: true
-  image_path: "assets/images/app_icon.png"
+
+
 
 flutter:
   uses-material-design: true
-
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "assets/images/play_store_512.png"
+  #  #image_path: "assets/images/app.png"
+  #flutter pub get
+  #>> flutter pub run flutter_launcher_icons:main
   assets:
     - assets/images/
     - assets/vectors/

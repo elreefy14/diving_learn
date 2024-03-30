@@ -39,27 +39,38 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
   @override
   Widget build(BuildContext context) {
 
-    return WillPopScope(
+    return  WillPopScope(
       onWillPop: () async {
 
         _webViewController?.goBack();
         return Future.value(false);
       },
+
       child: Scaffold(
         body: SafeArea(
           child: InAppWebView(
+            shouldOverrideUrlLoading: (controller, navigationAction) async {
+              Uri url = navigationAction.request.url!;
+              if (url.toString() == 'https://themeholy.com/wordpress/dride/') {
+                return NavigationActionPolicy.CANCEL;
+              }
+              return getIt<OnRouteChangeUseCase>()(OnRouteChangeUseCaseParams(controller: controller, navigationAction: navigationAction));
+            },
             pullToRefreshController: _pullToRefreshController,
             androidOnGeolocationPermissionsShowPrompt: _androidOnGeolocationPermissionsShowPrompt,
             initialUrlRequest: URLRequest(
-              url: Uri.parse(WebViewUrlHandler.webViewUrl ??"https://smartdriver.ae/"),
+              url: Uri.parse(
+                  WebViewUrlHandler.webViewUrl ??
+                      "https://smartdriver.ae/"
+              ),
             ),
             initialOptions: TrustKsaWebViewOptions().options,
-            onProgressChanged: _onProgressChanged,
+           // onProgressChanged: _onProgressChanged,
             onLoadError: _onError,
             onJsPrompt: (controller, jsPromptRequest) async {
               return Future.value(JsPromptResponse(handledByClient: true));
             },
-            shouldOverrideUrlLoading: (c,n)=>getIt<OnRouteChangeUseCase>()(OnRouteChangeUseCaseParams(controller: c, navigationAction: n)),
+            //
             androidOnPermissionRequest: _androidOnPermissionRequest,
             onWebViewCreated: _onWebViewCreated,
             onConsoleMessage: _onConsoleMessage,
@@ -95,14 +106,16 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     _pullToRefreshController?.endRefreshing();
   }
 
-  void _onProgressChanged(InAppWebViewController controller, int progress) {
-    if (progress > 80) {
-      UIHelpers.stopLoading();
-      _pullToRefreshController?.endRefreshing();
-    } else {
-      UIHelpers.showLoading();
-    }
-  }
+  // void _onProgressChanged(InAppWebViewController controller, int progress) {
+  //   //hwa 3amalha 70
+  //   //20 7lwa
+  //   if (progress > 20) {
+  //     UIHelpers.stopLoading();
+  //     _pullToRefreshController?.endRefreshing();
+  //   } else {
+  //     UIHelpers.showLoading();
+  //   }
+  // }
 
 
   void _onWebViewCreated(InAppWebViewController controller) async{

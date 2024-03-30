@@ -10,7 +10,7 @@ class DefaultNavigationBehave implements NavigationDelegateRepo {
   static const List<String> blackListedUrls = [
     "https://g.co/kgs/mzYosC",
     "https://api.whatsapp.com/",
-    //"https://www.youtube.com",
+    "https://www.youtube.com",
     "https://www.snapchat.com",
     "https://www.instagram.com",
     "https://play.google.com",
@@ -56,6 +56,21 @@ class DefaultNavigationBehave implements NavigationDelegateRepo {
       return NavigationActionPolicy.CANCEL;
     } else if (stringUrl.startsWith('app://')) {
       debugPrint('This action not handled $stringUrl');
+      return NavigationActionPolicy.CANCEL;
+    } else if (stringUrl.startsWith('about:blank')) {
+      debugPrint('This action not handled $stringUrl');
+      return NavigationActionPolicy.CANCEL;
+    } else if (stringUrl.startsWith('awalmazad://')) {
+      debugPrint('This action not handled $stringUrl');
+      return NavigationActionPolicy.CANCEL;
+    } else if (stringUrl.contains('/login')) {
+      debugPrint('This action not handled $stringUrl');
+      return NavigationActionPolicy.CANCEL;
+    }else if (stringUrl.contains('/appbrowse?')) {
+      //TODO: handle chat redirection
+      // debugPrint('This action appbrowse not handled $stringUrl');
+      // final url = Uri.parse(stringUrl).queryParameters['uri']??NetworkPath.networkPath;
+      // controller.loadUrl(urlRequest: URLRequest(url: Uri.parse(url)));
       return NavigationActionPolicy.CANCEL;
     }
     else

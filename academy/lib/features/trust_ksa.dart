@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:easy_localization/easy_localization.dart';
 import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:getx_skeleton/features/web_view_feature/presentation/webview/webview.dart';
 
@@ -35,8 +34,8 @@ class _TrustKsaState extends State<TrustKsa> {
       //* MaterialApp
       //
       builder: (context, child) => MaterialApp(
-       // localizationsDelegates: context.localizationDelegates,
-       // supportedLocales: context.supportedLocales,
+        //localizationsDelegates: context.localizationDelegates,
+      //  supportedLocales: context.supportedLocales,
         // locale: CookieManagerService.getLocale,
        // locale: context.locale,
         title: 'ثقه العربية',
