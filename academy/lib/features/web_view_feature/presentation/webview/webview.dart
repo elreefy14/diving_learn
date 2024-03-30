@@ -61,7 +61,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
             initialUrlRequest: URLRequest(
               url: Uri.parse(
                   WebViewUrlHandler.webViewUrl ??
-                      "https://smartdriver.ae/login/?redirect_to=https%3A%2F%2Fsmartdriver.ae%2F"
+                      "https://smartdriver.ae/"
               ),
             ),
             initialOptions: TrustKsaWebViewOptions().options,
