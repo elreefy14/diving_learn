@@ -1,0 +1,12 @@
+flutter_native_splash:
+#black background
+  color: "#000000"
+  image: assets/images/app.png
+  #$image: assets/images/Splash Screen.png
+  #image: assets/images/splash_12.png
+
+  android_12:
+    image: assets/images/app.png
+    color: "#000000"
+
+   # flutter pub pub run flutter_native_splash:create
