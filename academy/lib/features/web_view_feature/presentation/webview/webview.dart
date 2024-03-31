@@ -113,7 +113,8 @@ import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:fluttertoast/fluttertoast.dart';
 import '../../../../app/utils/get_it_injection.dart';
 import '../../../../app/utils/ui_helpers.dart';
 import '../../domain/usecase/on_route_change_usecase.dart';
@@ -181,27 +182,28 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
   }
 
   void _showNoInternetDialog() {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('لا يوجد اتصال بالإنترنت'),
-        content: const Text('يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى'),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () async {
-              var connectivityResult = await _connectivity.checkConnectivity();
-              if (connectivityResult != ConnectivityResult.none) {
-                Navigator.of(context).pop();
-              } else {
-                ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text(' لا يوجد اتصال بالإنترنت '
-                        'يرجى التحقق من اتصالك بالإنترنت والمحاولة مرة أخرى')));
-              }
-            },
-            child: const Text('اعادة المحاولة'),
-          ),
-        ],
-      ),
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (context) => NoConnectionScreen(
+        onRetry: () async {
+          var connectivityResult = await _connectivity.checkConnectivity();
+          if (connectivityResult != ConnectivityResult.none) {
+            Navigator.of(context).pop();
+            _webViewController?.reload();
+          } else {
+            Fluttertoast.showToast(
+              msg: "لا يوجد اتصال بالإنترنت \n يرجى التحقق من اتصالك بالإنترنت",
+              toastLength: Toast.LENGTH_SHORT,
+              gravity: ToastGravity.BOTTOM,
+              timeInSecForIosWeb: 1,
+              backgroundColor: Colors.red,
+              textColor: Colors.white,
+              fontSize: 16.0,
+
+            );
+          }
+        },
+      )),
     );
   }
 
@@ -323,6 +325,49 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     return PermissionRequestResponse(
       resources: resources,
       action: PermissionRequestResponseAction.GRANT,
+    );
+  }
+}
+class NoConnectionScreen extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const NoConnectionScreen({Key? key, required this.onRetry}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Stack(
+        fit: StackFit.expand,
+        children: [
+          Image.asset(
+            "assets/images/1_No Connection.png",
+            fit: BoxFit.cover,
+          ),
+          Positioned(
+            bottom: 100,
+            left: 30,
+            child: ElevatedButton(
+              style: ButtonStyle(
+                backgroundColor: MaterialStateProperty.all(Colors.white),
+                shape: MaterialStateProperty.all(
+                  RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(50),
+                  ),
+                ),
+              ),
+              onPressed: onRetry,
+              child: Text(
+                "Retry".toUpperCase(),
+                style: TextStyle(
+                  color: Colors.black,
+                  fontSize: 20.sp,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            ),
+          )
+        ],
+      ),
     );
   }
 }
