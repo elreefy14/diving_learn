@@ -1,125 +1,8 @@
-//[٦:٤٨ ص، ٢٠٢٤/٣/٣١] ahmed Elreefy: To handle the no internet connection case in your Flutter application, you can use the connectivity_plus package to check for internet connectivity and then display a screen with a message and a retry button if there's no connection. Here's how you can modify your TrustKsaWebView class to achieve this:
-//
-// First, add the connectivity_plus package to your pubspec.yaml:
-//
-// yaml
-// dependencies:
-//   flutter:
-//     sdk: flutter
-//   connectivity_plus: ^2.0.2 # Check for the latest version on pub.dev
-//
-//
-// Then, import the necessary packages in your Dart file:
-//
-// dart
-// import 'package:connectivity_plus/connectivity_plus.dart';
-//
-//
-// Next, modify your _TrustKsaWebViewState class to check for internet connectivity:
-//
-// dart
-// class _TrustKsaWebViewState extends State<TrustKsaWebView> {
-//   InAppWe…
-// [٦:٥١ ص، ٢٠٢٤/٣/٣١] ahmed Elreefy: To handle internet connection issues when using the InAppWebView in Flutter, you can use the connectivity_plus package to listen for internet connectivity changes and display a message or take action when there is no internet connection. Here's how you can modify your code to include internet connection handling:
-//
-// 1. Add connectivity_plus to your pubspec.yaml under dependencies:
-//
-// yaml
-// dependencies:
-//   flutter:
-//     sdk: flutter
-//   flutter_inappwebview:
-//   connectivity_plus: ^2.0.2
-//
-//
-// Remember to run flutter pub get to install the new package.
-//
-// 2. Import the connectivity_plus package in your Dart file:
-//
-// dart
-// import 'package:connectivity_plus/connectivity_plus.dart';
-//
-//
-// 3. Update your _TrustKsaWebViewState class to include a subscription to connectivity changes and to handle them:
-//
-// dart
-// class _TrustKsaWebViewState extends State<TrustKsaWebView> {
-//   InAppWebViewController? _webViewController;
-//   PullToRefreshController? _pullToRefreshController;
-//   final Connectivity _connectivity = Connectivity();
-//   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
-//
-//   @override
-//   void initState() {
-//     super.initState();
-//     _pullToRefreshController = PullToRefreshController(
-//       options: PullToRefreshOptions(
-//         color: Colors.deepOrangeAccent,
-//       ),
-//       onRefresh: _refresh,
-//     );
-//     _connectivitySubscription = _connectivity.onConnectivityChanged.listen(_updateConnectionStatus);
-//   }
-//
-//   @override
-//   void dispose() {
-//     WebViewUrlHandler.setWebViewController(null);
-//     _connectivitySubscription.cancel();
-//     super.dispose();
-//   }
-//
-//   Future<void> _updateConnectionStatus(ConnectivityResult result) async {
-//     if (result == ConnectivityResult.none) {
-//       _showNoInternetDialog();
-//     } else {
-//       _hideNoInternetDialog();
-//       // Optionally, refresh or reload the web view here
-//     }
-//   }
-//
-//   void _showNoInternetDialog() {
-//     showDialog(
-//       context: context,
-//       builder: (context) => AlertDialog(
-//         title: Text('No Internet Connection'),
-//         content: Text('Please check your internet connection and try again.'),
-//         actions: <Widget>[
-//           TextButton(
-//             onPressed: () {
-//               Navigator.of(context).pop();
-//             },
-//             child: Text('OK'),
-//           ),
-//         ],
-//       ),
-//     );
-//   }
-//
-//   void _hideNoInternetDialog() {
-//     // If you showed a persistent dialog or widget when there's no internet,
-//     // implement logic to hide it here when the connection is restored.
-//   }
-//
-//   // The rest of your class remains unchanged...
-// }
-//
-//
-// In this updated version of your _TrustKsaWebViewState class, the _updateConnectionStatus method listens for changes in internet connectivity. When there's no internet connection (ConnectivityResult.none), it shows a dialog informing the user. You can customize the _showNoInternetDialog and _hideNoInternetDialog methods as needed, depending on how you wish to inform the user of connectivity issues or recover from them.
-//
-// Remember that handling connectivity changes this way provides a basic level of feedback to the user. Depending on your application's requirements, you might want to implement more sophisticated error handling or recovery mechanisms.
 import 'dart:async';
-import 'dart:developer';
-import 'dart:io';
-import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:flutter_screenutil/flutter_screenutil.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-import '../../../../app/utils/get_it_injection.dart';
-import '../../../../app/utils/ui_helpers.dart';
-import '../../domain/usecase/on_route_change_usecase.dart';
-import 'handler/web_view_url_handler.dart';
-import 'webview_options.dart';
 
 class TrustKsaWebView extends StatefulWidget {
   const TrustKsaWebView({Key? key}) : super(key: key);
@@ -127,247 +10,183 @@ class TrustKsaWebView extends StatefulWidget {
   @override
   _TrustKsaWebViewState createState() => _TrustKsaWebViewState();
 }
+
 class _TrustKsaWebViewState extends State<TrustKsaWebView> {
   InAppWebViewController? _webViewController;
-  PullToRefreshController? _pullToRefreshController;
-  final Connectivity _connectivity = Connectivity();
-  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
+  bool _isLoading = true;
 
-  @override
-  void initState() {
-    super.initState();
-    _pullToRefreshController = PullToRefreshController(
-      options: PullToRefreshOptions(
-        color: Colors.deepOrangeAccent,
-      ),
-      onRefresh: _refresh,
-    );
-    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(_updateConnectionStatus);
-    _connectivity.checkConnectivity().then((result) {
-    if (result == ConnectivityResult.none) {
-      _showNoInternetDialog();
-    }
-  });
-  }
-
-  @override
-  void dispose() {
-    WebViewUrlHandler.setWebViewController(null);
-    _connectivitySubscription.cancel();
-    super.dispose();
-  }
-
-  Future<void> _updateConnectionStatus(ConnectivityResult result
-      ,
-      {     bool? isReloadTheWebsite = false
-}
-      ) async {
-    if (result == ConnectivityResult.none) {
-      _showNoInternetDialog();
-    } else {
-      _hideNoInternetDialog();
-   if(
-  // isReloadTheWebsite == true
-  true
-   ) {
-     _webViewController?.loadUrl(
-        urlRequest: URLRequest(
-          url: Uri.parse(
-              WebViewUrlHandler.webViewUrl ?? "https://smartdriver.ae/"
-          ),
-        ),
-      );
-   }
-    }
-  }
-
-  void _showNoInternetDialog() {
-    Navigator.push(
-      context,
-      MaterialPageRoute(builder: (context) => NoConnectionScreen(
-        onRetry: () async {
-          var connectivityResult = await _connectivity.checkConnectivity();
-          if (connectivityResult != ConnectivityResult.none) {
-            Navigator.of(context).pop();
-            _webViewController?.reload();
-          } else {
-            Fluttertoast.showToast(
-              msg: "لا يوجد اتصال بالإنترنت \n يرجى التحقق من اتصالك بالإنترنت",
-              toastLength: Toast.LENGTH_SHORT,
-              gravity: ToastGravity.BOTTOM,
-              timeInSecForIosWeb: 1,
-              backgroundColor: Colors.red,
-              textColor: Colors.white,
-              fontSize: 16.0,
-
-            );
+  // Updated JavaScript code to include TikTok
+  final String _injectedScript = '''
+    document.addEventListener('click', function(e) {
+      var target = e.target;
+      while (target != null) {
+        if (target.tagName === 'A') {
+          var href = target.getAttribute('href');
+          if (href && (href.startsWith('whatsapp://') || 
+                       href.startsWith('intent://') || 
+                       href.startsWith('fb://') ||
+                       href.includes('api.whatsapp.com') ||
+                       href.includes('facebook.com') ||
+                       href.includes('tiktok.com') ||
+                       href.startsWith('snssdk1233://') ||
+                       href.startsWith('tiktoken://'))) {
+            e.preventDefault();
+            window.flutter_inappwebview.callHandler('handleUrl', href);
+            return false;
           }
-        },
-      )),
-    );
-  }
-
-  void _hideNoInternetDialog() {
-    //pop dialog
-    // If you showed a persistent dialog or widget when there's no internet,
-    // implement logic to hide it here when the connection is restored.
-    if (Navigator.canPop(context)) {
-      Navigator.of(context).pop();
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-
-    return  WillPopScope(
-      onWillPop: () async {
-
-        _webViewController?.goBack();
-        return Future.value(false);
-      },
-
-      child: Scaffold(
-        body: SafeArea(
-          child: InAppWebView(
-            shouldOverrideUrlLoading: (controller, navigationAction) async {
-              Uri url = navigationAction.request.url!;
-              if (url.toString() == 'https://themeholy.com/wordpress/dride/') {
-                return NavigationActionPolicy.CANCEL;
-              }
-              return getIt<OnRouteChangeUseCase>()(OnRouteChangeUseCaseParams(controller: controller, navigationAction: navigationAction));
-            },
-            pullToRefreshController: _pullToRefreshController,
-            androidOnGeolocationPermissionsShowPrompt: _androidOnGeolocationPermissionsShowPrompt,
-            initialUrlRequest: URLRequest(
-              url: Uri.parse(
-                  WebViewUrlHandler.webViewUrl ??
-                      "https://smartdriver.ae/"
-              ),
-            ),
-            initialOptions: TrustKsaWebViewOptions().options,
-            onProgressChanged: _onProgressChanged,
-            onLoadError: _onError,
-            onJsPrompt: (controller, jsPromptRequest) async {
-              return Future.value(JsPromptResponse(handledByClient: true));
-            },
-            //
-            androidOnPermissionRequest: _androidOnPermissionRequest,
-            onWebViewCreated: _onWebViewCreated,
-            onConsoleMessage: _onConsoleMessage,
-            onLoadStop: _onLoadStop,
-          ),
-        ),
-  //      floatingActionButton: FloatingActionButton(
-  //        onPressed: ()async{
-  //          await launchUrl(Uri.parse("https://wa.me/+966508824777"));
-  //        },
-  //        backgroundColor: Colors.greenAccent,
-  //        child: const Icon(Icons.chat),
-        //     ),
-      ),
-    );
-  }
-
-  void _onError(InAppWebViewController controller, Uri? uri, int code, String description) async {
-    log("$code / $description / ${uri}",name: "_onError");
-  }
-
-
-  void _refresh() async {
-    if (Platform.isAndroid) {
-      _webViewController?.reload();
-    } else if (Platform.isIOS) {
-      _webViewController?.loadUrl(
-          urlRequest: URLRequest(url: await _webViewController?.getUrl()));
-    }
-  }
-
-  void _endRefresh() {
-    _pullToRefreshController?.endRefreshing();
-  }
-
-  void _onProgressChanged(InAppWebViewController controller, int progress) {
-    //hwa 3amalha 70
-    //20 7lwa
-    if (progress > 50) {
-      UIHelpers.stopLoading();
-      _pullToRefreshController?.endRefreshing();
-    } else {
-      UIHelpers.showLoading();
-    }
-  }
-
-
-  void _onWebViewCreated(InAppWebViewController controller) async{
-    _webViewController = controller;
-    WebViewUrlHandler.setWebViewController(controller);
-  }
-
-  void _onConsoleMessage(InAppWebViewController controller, ConsoleMessage consoleMessage) async{
-    log(consoleMessage.toMap().toString(),name:"consoleMessage");
-  }
-
-  void _onLoadStop(InAppWebViewController controller, Uri? url) async {
-    _endRefresh();
-    // used to close splashscreen after initial url is loading so that application opened on loaded UI
-    // FlutterNativeSplash.remove();
-  }
-
-  Future<GeolocationPermissionShowPromptResponse?> _androidOnGeolocationPermissionsShowPrompt(InAppWebViewController controller, String origin) async {
-    return GeolocationPermissionShowPromptResponse(
-      allow: true,
-      origin: origin,
-      retain: false,
-    );
-  }
-
-  Future<PermissionRequestResponse?> _androidOnPermissionRequest(InAppWebViewController controller, String origin, List<String> resources) async {
-    return PermissionRequestResponse(
-      resources: resources,
-      action: PermissionRequestResponseAction.GRANT,
-    );
-  }
-}
-class NoConnectionScreen extends StatelessWidget {
-  final VoidCallback onRetry;
-
-  const NoConnectionScreen({Key? key, required this.onRetry}) : super(key: key);
+        }
+        target = target.parentElement;
+      }
+    }, true);
+  ''';
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          Image.asset(
-            "assets/images/1_No Connection.png",
-            fit: BoxFit.cover,
+      body: SafeArea(
+        child: InAppWebView(
+          initialUrlRequest: URLRequest(
+            url: Uri.parse("https://jifirephone.com/"),
           ),
-          Positioned(
-            bottom: 100,
-            left: 30,
-            child: ElevatedButton(
-              style: ButtonStyle(
-                backgroundColor: MaterialStateProperty.all(Colors.white),
-                shape: MaterialStateProperty.all(
-                  RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(50),
-                  ),
-                ),
-              ),
-              onPressed: onRetry,
-              child: Text(
-                "Retry".toUpperCase(),
-                style: TextStyle(
-                  color: Colors.black,
-                  fontSize: 20.sp,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+          initialOptions: InAppWebViewGroupOptions(
+            crossPlatform: InAppWebViewOptions(
+                useShouldOverrideUrlLoading: true,
+                javaScriptEnabled: true,
+                userAgent: 'Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.120 Mobile Safari/537.36'
             ),
-          )
-        ],
+          ),
+          onWebViewCreated: (InAppWebViewController controller) async {
+            _webViewController = controller;
+
+            controller.addJavaScriptHandler(
+              handlerName: 'handleUrl',
+              callback: (args) async {
+                if (args.isNotEmpty) {
+                  final url = args[0].toString();
+                  await _handleExternalUrl(url);
+                }
+              },
+            );
+          },
+          onLoadStop: (controller, url) async {
+            await controller.evaluateJavascript(source: _injectedScript);
+          },
+          shouldOverrideUrlLoading: (controller, navigationAction) async {
+            final url = navigationAction.request.url?.toString() ?? '';
+
+            if (_shouldHandleExternally(url)) {
+              await _handleExternalUrl(url);
+              return NavigationActionPolicy.CANCEL;
+            }
+
+            return NavigationActionPolicy.ALLOW;
+          },
+          onLoadError: (controller, url, code, message) {
+            debugPrint('WebView Error: $code - $message');
+          },
+        ),
       ),
+    );
+  }
+
+  bool _shouldHandleExternally(String url) {
+    return url.startsWith('whatsapp://') ||
+        url.startsWith('intent://') ||
+        url.startsWith('fb://') ||
+        url.contains('api.whatsapp.com') ||
+        url.contains('facebook.com') ||
+        url.contains('messenger.com') ||
+        url.contains('tiktok.com') ||
+        url.startsWith('snssdk1233://') ||  // TikTok app scheme
+        url.startsWith('tiktoken://');       // Alternative TikTok app scheme
+  }
+
+  Future<void> _handleExternalUrl(String url) async {
+    try {
+      debugPrint('Handling external URL: $url');
+
+      // Handle TikTok URLs
+      if (url.contains('tiktok.com') ||
+          url.startsWith('snssdk1233://') ||
+          url.startsWith('tiktoken://')) {
+        final tiktokUrl = _processTikTokUrl(url);
+        debugPrint('Using TikTok URL: $tiktokUrl');
+        await _launchUrl(tiktokUrl);
+        return;
+      }
+
+      // Handle Facebook intent URLs
+      if (url.startsWith('intent://')) {
+        if (url.contains('browser_fallback_url=')) {
+          final fallbackUrl = Uri.decodeFull(
+              url.split('browser_fallback_url=')[1].split(';')[0]
+          );
+          debugPrint('Using Facebook fallback URL: $fallbackUrl');
+          await _launchUrl(fallbackUrl);
+          return;
+        }
+      }
+
+      // Handle WhatsApp URLs
+      if (url.contains('whatsapp') || url.contains('wa.me')) {
+        final whatsappUrl = url
+            .replaceAll('whatsapp://', 'https://api.whatsapp.com/')
+            .replaceAll('send/?', 'send?');
+        debugPrint('Using WhatsApp URL: $whatsappUrl');
+        await _launchUrl(whatsappUrl);
+        return;
+      }
+
+      // Handle all other URLs
+      await _launchUrl(url);
+
+    } catch (e) {
+      debugPrint('Error handling URL: $e');
+      _showToast('Unable to open link');
+    }
+  }
+
+  String _processTikTokUrl(String url) {
+    // Handle various TikTok URL formats
+    if (url.startsWith('snssdk1233://') || url.startsWith('tiktoken://')) {
+      // Convert app scheme to https
+      return url.replaceFirst(RegExp(r'(snssdk1233|tiktoken)://'), 'https://www.tiktok.com/');
+    }
+
+    // If it's already a web URL, ensure it's using https
+    if (url.contains('tiktok.com')) {
+      if (url.startsWith('http://')) {
+        return url.replaceFirst('http://', 'https://');
+      }
+      if (!url.startsWith('https://')) {
+        return 'https://$url';
+      }
+    }
+
+    return url;
+  }
+
+  Future<void> _launchUrl(String url) async {
+    try {
+      final uri = Uri.parse(url);
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        _showToast('Unable to open link');
+      }
+    } catch (e) {
+      debugPrint('Error launching URL: $e');
+      _showToast('Unable to open link');
+    }
+  }
+
+  void _showToast(String message) {
+    Fluttertoast.showToast(
+      msg: message,
+      toastLength: Toast.LENGTH_SHORT,
+      gravity: ToastGravity.BOTTOM,
+      backgroundColor: Colors.red,
+      textColor: Colors.white,
     );
   }
 }

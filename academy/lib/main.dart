@@ -9,6 +9,6 @@ void main() async{
   await init();
   //* Preserve Native Splash Screen
   // FlutterNativeSplash.preserve(widgetsBinding: widgetsBinding);
-  runApp(const TrustKsa(),);
+  runApp( TrustKsa(),);
 }
 

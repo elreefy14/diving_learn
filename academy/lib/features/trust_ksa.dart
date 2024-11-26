@@ -1,6 +1,5 @@
 import 'dart:io';
 
-import 'package:flutter_screenutil/flutter_screenutil.dart';
 import 'package:getx_skeleton/features/web_view_feature/presentation/webview/webview.dart';
 
 import '../../../app/utils/ui_helpers.dart';
@@ -26,35 +25,27 @@ class _TrustKsaState extends State<TrustKsa> {
     //
     //* EasyLocalization
     //
-    return ScreenUtilInit(
-      designSize: const Size(375, 812),
-      minTextAdapt: true,
-      splitScreenMode: true,
-      //
-      //* MaterialApp
-      //
-      builder: (context, child) => MaterialApp(
-        //localizationsDelegates: context.localizationDelegates,
+    return  MaterialApp(
+      //localizationsDelegates: context.localizationDelegates,
       //  supportedLocales: context.supportedLocales,
-        // locale: CookieManagerService.getLocale,
-       // locale: context.locale,
-        title: 'smart driver',
-        debugShowCheckedModeBanner: false,
-        // theme: Theme(),
-        // navigatorKey: getIt<NavService>().navigatorKey,
-        //
-        //* EasyLoading
-        //
-        builder: EasyLoading.init(
-          builder: (context, widget) {
-            return MediaQuery(
-              data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
-              child: widget!,
-            );
-          },
-        ),
-        home:  const TrustKsaWebView(),
+      // locale: CookieManagerService.getLocale,
+      // locale: context.locale,
+      title: 'جي فاير للموبايل',
+      debugShowCheckedModeBanner: false,
+      // theme: Theme(),
+      // navigatorKey: getIt<NavService>().navigatorKey,
+      //
+      //* EasyLoading
+      //
+      builder: EasyLoading.init(
+        builder: (context, widget) {
+          return MediaQuery(
+            data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
+            child: widget!,
+          );
+        },
       ),
+      home:  const TrustKsaWebView(),
     );
   }
 }

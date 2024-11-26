@@ -1,5 +1,6 @@
 
 # Flutter GetX Template
+#3.13.0
 
 Flutter Getx template: Starting up new project with all needed configuration has never been easier.
 

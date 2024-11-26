@@ -2,12 +2,12 @@
 class Assets {
   Assets._();
 
-  static const String fontsCairoMedium = 'assets/fonts/Cairo-Medium.ttf';
-  static const String fontsCairoRegular = 'assets/fonts/Cairo-Regular.ttf';
-  static const String fontsCairoSemiBold = 'assets/fonts/Cairo-SemiBold.ttf';
-  static const String fontsPoppinsMedium = 'assets/fonts/Poppins-Medium.ttf';
-  static const String fontsPoppinsRegular = 'assets/fonts/Poppins-Regular.ttf';
-  static const String fontsPoppinsSemiBold = 'assets/fonts/Poppins-SemiBold.ttf';
+  // static const String fontsCairoMedium = 'assets/fonts/Cairo-Medium.ttf';
+  // static const String fontsCairoRegular = 'assets/fonts/Cairo-Regular.ttf';
+  // static const String fontsCairoSemiBold = 'assets/fonts/Cairo-SemiBold.ttf';
+  // static const String fontsPoppinsMedium = 'assets/fonts/Poppins-Medium.ttf';
+  // static const String fontsPoppinsRegular = 'assets/fonts/Poppins-Regular.ttf';
+  // static const String fontsPoppinsSemiBold = 'assets/fonts/Poppins-SemiBold.ttf';
   static const String imagesApp = 'assets/images/app.png';
   static const String imagesPerson1 = 'assets/images/person1.png';
   static const String imagesPerson2 = 'assets/images/person2.png';
