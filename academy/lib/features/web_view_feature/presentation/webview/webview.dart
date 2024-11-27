@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:url_launcher/url_launcher.dart';
@@ -14,6 +15,10 @@ class TrustKsaWebView extends StatefulWidget {
 class _TrustKsaWebViewState extends State<TrustKsaWebView> {
   InAppWebViewController? _webViewController;
   bool _isLoading = true;
+  bool _isShowingNoConnection = false;
+  final Connectivity _connectivity = Connectivity();
+  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
+
 
   // Updated JavaScript code to include TikTok
   final String _injectedScript = '''
@@ -39,6 +44,75 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       }
     }, true);
   ''';
+
+  @override
+  void initState() {
+    super.initState();
+    _initConnectivity();
+    _connectivitySubscription = _connectivity.onConnectivityChanged.listen(_updateConnectionStatus);
+  }
+
+  Future<void> _updateConnectionStatus(ConnectivityResult result) async {
+    if (result == ConnectivityResult.none) {
+      if (!_isShowingNoConnection) {
+        _showNoConnectionScreen();
+      }
+    } else {
+      if (_isShowingNoConnection && mounted) {
+        // Return to WebView and reload
+        Navigator.of(context).pushReplacement(
+          MaterialPageRoute(
+            builder: (context) => const TrustKsaWebView(),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showNoConnectionScreen() {
+    _isShowingNoConnection = true;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(
+        builder: (context) => NoConnectionScreen(
+          onRetry: () async {
+            ConnectivityResult result = await _connectivity.checkConnectivity();
+            if (result != ConnectivityResult.none) {
+              if (mounted) {
+                _isShowingNoConnection = false;
+                Navigator.pushReplacement(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => const TrustKsaWebView(),
+                  ),
+                );
+              }
+            } else {
+              Fluttertoast.showToast(
+                msg: "لا يوجد اتصال بالإنترنت",
+                backgroundColor: Colors.red,
+                textColor: Colors.white,
+              );
+            }
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _connectivitySubscription.cancel();
+    super.dispose();
+  }
+
+
+  Future<void> _initConnectivity() async {
+    ConnectivityResult result = await _connectivity.checkConnectivity();
+    _updateConnectionStatus(result);
+  }
+
+
 
   @override
   Widget build(BuildContext context) {
@@ -187,6 +261,151 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       gravity: ToastGravity.BOTTOM,
       backgroundColor: Colors.red,
       textColor: Colors.white,
+    );
+  }
+}
+
+class NoConnectionScreen extends StatelessWidget {
+  final VoidCallback onRetry;
+
+  const NoConnectionScreen({Key? key, required this.onRetry}) : super(key: key);
+
+  // Brand colors
+  static const Color primaryYellow = Color(0xFFFEAA00);
+  static const Color secondaryGray = Color(0xFFE6E6E6);
+  static const Color darkGray = Color(0xFF333333);
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      body: Container(
+        width: double.infinity,
+        decoration: BoxDecoration(
+          color: Colors.white,
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              Colors.white,
+              secondaryGray.withOpacity(0.3),
+            ],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Logo/Icon with animation
+              Container(
+                padding: const EdgeInsets.all(30),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: Colors.white,
+                  boxShadow: [
+                    BoxShadow(
+                      color: primaryYellow.withOpacity(0.2),
+                      blurRadius: 20,
+                      spreadRadius: 5,
+                    ),
+                  ],
+                ),
+                child: const Icon(
+                  Icons.wifi_off_rounded,
+                  size: 60,
+                  color: primaryYellow,
+                ),
+              ),
+
+              const SizedBox(height: 40),
+
+              // Main error message
+              Text(
+                'لا يوجد اتصال بالإنترنت',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 24,
+                  color: darkGray,
+                  fontWeight: FontWeight.bold,
+                  height: 1.4,
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Description
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: Text(
+                  'يرجى التحقق من اتصالك بالإنترنت',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: darkGray.withOpacity(0.7),
+                    height: 1.6,
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 48),
+
+              // Retry button with modern design
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 32),
+                child: SizedBox(
+                  width: double.infinity,
+                  height: 56,
+                  child: ElevatedButton(
+                    onPressed: onRetry,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: primaryYellow,
+                      elevation: 0,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: const [
+                        Icon(
+                          Icons.refresh_rounded,
+                          color: Colors.white,
+                          size: 22,
+                        ),
+                        SizedBox(width: 12),
+                        Text(
+                          'إعادة المحاولة',
+                          style: TextStyle(
+                            fontSize: 18,
+                            color: Colors.white,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+
+              // Additional help text
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: TextButton(
+                  onPressed: () {
+                    // Optional: Add additional help or troubleshooting steps
+                  },
+                  child: Text(
+                    'تحتاج مساعدة؟',
+                    style: TextStyle(
+                      color: darkGray.withOpacity(0.7),
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
