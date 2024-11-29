@@ -1,6 +1,7 @@
   import 'dart:async';
 
   import 'package:connectivity_plus/connectivity_plus.dart';
+import 'package:curved_navigation_bar/curved_navigation_bar.dart';
   import 'package:flutter/material.dart';
   import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
@@ -8,6 +9,11 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
   import 'package:fluttertoast/fluttertoast.dart';
 
   import 'handler/web_view_url_handler.dart';
+  class BrandColors {
+    static const Color primaryYellow = Color(0xFFFEAA00);
+    static const Color secondaryGray = Color(0xFFE6E6E6);
+    static const Color darkGray = Color(0xFF333333);
+  }
   class AccessoryCategory {
     final String name;
     final String url;
@@ -295,12 +301,7 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
     }
 
 
-    void _onLoadStart(InAppWebViewController controller, Uri? url) {
-      if (mounted) {
-        setState(() => _isLoading = true);
-        _injectRemovalScript(controller);
-      }
-    }
+
 
     void _onLoadStop(InAppWebViewController controller, Uri? url) {
       if (mounted) {
@@ -313,13 +314,6 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
       }
     }
 
-    void _onProgressChanged(InAppWebViewController controller, int progress) {
-      if (!mounted) return;
-      setState(() => _progress = progress / 100);
-      if (progress > 70) {
-        _injectRemovalScript(controller);
-      }
-    }
 
 
 
@@ -725,12 +719,31 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
 
 
 
+    void _onLoadStart(InAppWebViewController controller, Uri? url) {
+      if (mounted) {
+        setState(() => _isLoading = true);
+        _injectRemovalScript(controller);
+      }
+    }
+
+
+    void _onProgressChanged(InAppWebViewController controller, int progress) {
+      if (!mounted) return;
+      setState(() {
+        _progress = progress / 100;
+        _isLoading = _progress < 1.0;
+      });
+      if (progress > 50) {
+        _injectRemovalScript(controller);
+      }
+    }
+
     @override
     Widget build(BuildContext context) {
       return WillPopScope(
         onWillPop: () async {
-          if (await _webViewController?.canGoBack() ?? false) {
-            await _webViewController?.goBack();
+          if (await _webViewController!.canGoBack()) {
+            await _webViewController!.goBack();
             return false;
           }
           return true;
@@ -750,144 +763,51 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
                   onLoadStart: _onLoadStart,
                   onProgressChanged: _onProgressChanged,
                   onLoadStop: _onLoadStop,
-                  onLoadError: _onLoadError,
-                  androidOnPermissionRequest: _handleAndroidPermissionRequest,
                 ),
                 if (_isLoading)
-                  Container(
-                    color: Colors.white.withOpacity(0.8),
-                    child: Center(
-                      child: LoadingAnimationWidget.staggeredDotsWave(
-                        color: const Color(0xFFFEAA00),
-                        size: 50,
+                  Column(
+                    children: [
+                      LinearProgressIndicator(
+                        value: _progress,
+                        backgroundColor: Colors.grey[300],
+                        valueColor:
+                        AlwaysStoppedAnimation<Color>(Colors.blue),
                       ),
-                    ),
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            '${(_progress * 100).toInt()}% Loading...',
+                            style: TextStyle(
+                                fontSize: 16, color: Colors.black54),
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
-                // Menu and Search Buttons
-                // Positioned(
-                //   top: MediaQuery.of(context).padding.top + 10,
-                //   left: 10,
-                //   child: FloatingActionButton(
-                //     mini: true,
-                //     backgroundColor: Colors.white,
-                //     elevation: 4,
-                //     onPressed: () {
-                //       showDialog(
-                //         context: context,
-                //         builder: (BuildContext context) {
-                //           return Dialog(
-                //             shape: RoundedRectangleBorder(
-                //               borderRadius: BorderRadius.circular(15),
-                //             ),
-                //             child: Container(
-                //               width: MediaQuery.of(context).size.width * 0.8,
-                //               child: Column(
-                //                 mainAxisSize: MainAxisSize.min,
-                //                 children: [
-                //                   Container(
-                //                     height: 100,
-                //                     decoration: const BoxDecoration(
-                //                       color: Color(0xFFFEAA00),
-                //                       borderRadius: BorderRadius.only(
-                //                         topLeft: Radius.circular(15),
-                //                         topRight: Radius.circular(15),
-                //                       ),
-                //                     ),
-                //                     child: Center(
-                //                       child: Column(
-                //                         mainAxisAlignment: MainAxisAlignment.center,
-                //                         children: [
-                //                           Image.asset('assets/images/logo.png', height: 50),
-                //                           const SizedBox(height: 8),
-                //                           const Text(
-                //                             'جي فاير للموبايل',
-                //                             style: TextStyle(
-                //                               color: Colors.white,
-                //                               fontSize: 16,
-                //                               fontWeight: FontWeight.bold,
-                //                             ),
-                //                           ),
-                //                         ],
-                //                       ),
-                //                     ),
-                //                   ),
-                //                   ListTile(
-                //                     leading: const Icon(Icons.shield_outlined, color: Color(0xFFFEAA00)),
-                //                     title: const Text('سياسة الخصوصية'),
-                //                     onTap: () {
-                //                       Navigator.pop(context);
-                //                       _loadUrl('https://jifirephone.com/policies/privacy-policy');
-                //                     },
-                //                   ),
-                //                   ListTile(
-                //                     leading: const Icon(Icons.person_off_outlined, color: Color(0xFFFEAA00)),
-                //                     title: const Text('حذف الحساب'),
-                //                     onTap: () {
-                //                       Navigator.pop(context);
-                //                       _loadUrl('https://jifirephone.com/pages/delete-account');
-                //                     },
-                //                   ),
-                //                   const SizedBox(height: 10),
-                //                 ],
-                //               ),
-                //             ),
-                //           );
-                //         },
-                //       );
-                //     },
-                //     child: const Icon(Icons.menu, color: Color(0xFFFEAA00)),
-                //   ),
-                // ),
-                // Positioned(
-                //   top: MediaQuery.of(context).padding.top + 10,
-                //   right: 10,
-                //   child: FloatingActionButton(
-                //     mini: true,
-                //     backgroundColor: Colors.white,
-                //     elevation: 4,
-                //     onPressed: () => _showSearchDialog(context),
-                //     child: const Icon(Icons.search, color: Color(0xFFFEAA00)),
-                //   ),
-                // ),
               ],
             ),
           ),
-          bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _currentIndex,
+          bottomNavigationBar: CurvedNavigationBar(
+            backgroundColor: Colors.white,
+            color: Colors.blue,
+            buttonBackgroundColor: Colors.blue,
+            height: 60,
+            index: _currentIndex,
             onTap: _onBottomNavTapped,
-            type: BottomNavigationBarType.fixed,
-            selectedItemColor: Colors.blue,
-            unselectedItemColor: Colors.grey,
             items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.home),
-                label: 'الرئيسية',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.phone_iphone),
-                label: 'موبايلات',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.camera_alt),
-                label: 'كاميرات',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.laptop),
-                label: 'لابتوب',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.videogame_asset),
-                label: 'ألعاب',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.headphones),
-                label: 'اكسسوارات',
-              ),
+              Icon(Icons.home, color: Colors.white),
+              Icon(Icons.phone_iphone, color: Colors.white),
+              Icon(Icons.camera_alt, color: Colors.white),
+              Icon(Icons.laptop, color: Colors.white),
+              Icon(Icons.videogame_asset, color: Colors.white),
+              Icon(Icons.headphones, color: Colors.white),
             ],
           ),
         ),
       );
     }
+
+
 
     bool _shouldHandleExternally(String url) {
       return url.startsWith('whatsapp://') ||
