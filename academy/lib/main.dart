@@ -211,7 +211,7 @@ void main() async {
 
   final prefs = await SharedPreferences.getInstance();
   final showOnboarding = prefs.getBool('onboarding_complete')??true;
-   prefs.setBool('onboarding_complete',false);
+   //prefs.setBool('onboarding_complete',false);
 
   runApp(TrustKsa(showOnboarding: showOnboarding));
 }
