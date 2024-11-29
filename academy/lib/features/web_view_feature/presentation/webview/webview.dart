@@ -3,6 +3,7 @@
   import 'package:connectivity_plus/connectivity_plus.dart';
   import 'package:flutter/material.dart';
   import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:loading_animation_widget/loading_animation_widget.dart';
   import 'package:url_launcher/url_launcher.dart';
   import 'package:fluttertoast/fluttertoast.dart';
 
@@ -735,45 +736,6 @@
           return true;
         },
         child: Scaffold(
-
-          drawer: Drawer(
-            child: ListView(
-              children: [
-                DrawerHeader(
-                  decoration: BoxDecoration(
-                    color: Color(0xFFFEAA00),
-                  ),
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Image.asset('assets/images/logo.png', height: 80),
-                      SizedBox(height: 10),
-                      Text(
-                        'جي فاير للموبايل',
-                        style: TextStyle(color: Colors.white, fontSize: 20),
-                      ),
-                    ],
-                  ),
-                ),
-                ListTile(
-                  leading: Icon(Icons.shield_outlined, color: Color(0xFFFEAA00)),
-                  title: Text('سياسة الخصوصية'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _loadUrl('https://jifirephone.com/policies/privacy-policy');
-                  },
-                ),
-                ListTile(
-                  leading: Icon(Icons.person_off_outlined, color: Color(0xFFFEAA00)),
-                  title: Text('حذف الحساب'),
-                  onTap: () {
-                    Navigator.pop(context);
-                    _loadUrl('https://jifirephone.com/pages/delete-account');
-                  },
-                ),
-              ],
-            ),
-          ),
           body: SafeArea(
             child: Stack(
               children: [
@@ -792,11 +754,101 @@
                   androidOnPermissionRequest: _handleAndroidPermissionRequest,
                 ),
                 if (_isLoading)
-                  LinearProgressIndicator(
-                    value: _progress,
-                    backgroundColor: Colors.white,
-                    valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                  Container(
+                    color: Colors.white.withOpacity(0.8),
+                    child: Center(
+                      child: LoadingAnimationWidget.staggeredDotsWave(
+                        color: const Color(0xFFFEAA00),
+                        size: 50,
+                      ),
+                    ),
                   ),
+                // Menu and Search Buttons
+                // Positioned(
+                //   top: MediaQuery.of(context).padding.top + 10,
+                //   left: 10,
+                //   child: FloatingActionButton(
+                //     mini: true,
+                //     backgroundColor: Colors.white,
+                //     elevation: 4,
+                //     onPressed: () {
+                //       showDialog(
+                //         context: context,
+                //         builder: (BuildContext context) {
+                //           return Dialog(
+                //             shape: RoundedRectangleBorder(
+                //               borderRadius: BorderRadius.circular(15),
+                //             ),
+                //             child: Container(
+                //               width: MediaQuery.of(context).size.width * 0.8,
+                //               child: Column(
+                //                 mainAxisSize: MainAxisSize.min,
+                //                 children: [
+                //                   Container(
+                //                     height: 100,
+                //                     decoration: const BoxDecoration(
+                //                       color: Color(0xFFFEAA00),
+                //                       borderRadius: BorderRadius.only(
+                //                         topLeft: Radius.circular(15),
+                //                         topRight: Radius.circular(15),
+                //                       ),
+                //                     ),
+                //                     child: Center(
+                //                       child: Column(
+                //                         mainAxisAlignment: MainAxisAlignment.center,
+                //                         children: [
+                //                           Image.asset('assets/images/logo.png', height: 50),
+                //                           const SizedBox(height: 8),
+                //                           const Text(
+                //                             'جي فاير للموبايل',
+                //                             style: TextStyle(
+                //                               color: Colors.white,
+                //                               fontSize: 16,
+                //                               fontWeight: FontWeight.bold,
+                //                             ),
+                //                           ),
+                //                         ],
+                //                       ),
+                //                     ),
+                //                   ),
+                //                   ListTile(
+                //                     leading: const Icon(Icons.shield_outlined, color: Color(0xFFFEAA00)),
+                //                     title: const Text('سياسة الخصوصية'),
+                //                     onTap: () {
+                //                       Navigator.pop(context);
+                //                       _loadUrl('https://jifirephone.com/policies/privacy-policy');
+                //                     },
+                //                   ),
+                //                   ListTile(
+                //                     leading: const Icon(Icons.person_off_outlined, color: Color(0xFFFEAA00)),
+                //                     title: const Text('حذف الحساب'),
+                //                     onTap: () {
+                //                       Navigator.pop(context);
+                //                       _loadUrl('https://jifirephone.com/pages/delete-account');
+                //                     },
+                //                   ),
+                //                   const SizedBox(height: 10),
+                //                 ],
+                //               ),
+                //             ),
+                //           );
+                //         },
+                //       );
+                //     },
+                //     child: const Icon(Icons.menu, color: Color(0xFFFEAA00)),
+                //   ),
+                // ),
+                // Positioned(
+                //   top: MediaQuery.of(context).padding.top + 10,
+                //   right: 10,
+                //   child: FloatingActionButton(
+                //     mini: true,
+                //     backgroundColor: Colors.white,
+                //     elevation: 4,
+                //     onPressed: () => _showSearchDialog(context),
+                //     child: const Icon(Icons.search, color: Color(0xFFFEAA00)),
+                //   ),
+                // ),
               ],
             ),
           ),
@@ -836,7 +888,6 @@
         ),
       );
     }
-
 
     bool _shouldHandleExternally(String url) {
       return url.startsWith('whatsapp://') ||
