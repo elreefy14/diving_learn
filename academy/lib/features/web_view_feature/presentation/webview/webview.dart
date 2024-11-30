@@ -741,117 +741,116 @@
 
     @override
 
-    @override
-    Widget build(BuildContext context) {
-      return WillPopScope(
-        onWillPop: () async {
-          if (await _webViewController!.canGoBack()) {
-            await _webViewController!.goBack();
-            return false;
-          }
-          return true;
-        },
-        child: Scaffold(
-          body: SafeArea(
-            child: Stack(
-              children: [
-                InAppWebView(
-                  initialUrlRequest: URLRequest(
-                    url: Uri.parse(_urls[0]),
-                    headers: {
-                      'Cache-Control': 'max-age=3600',
-                      'Accept': 'text/html,application/json',
-                      'Accept-Encoding': 'gzip, deflate',
-                    },
-                  ),
-                  initialOptions: _options,
-                  onWebViewCreated: _onWebViewCreated,
-                  onLoadStart: _onLoadStart,
-                  onProgressChanged: _onProgressChanged,
-                  onLoadStop: _onLoadStop,
-                  onLoadError: _onLoadError,
-                  onLoadResource: (controller, resource) async {
-                    final url = resource.url.toString();
-                    if (_CacheableResource.isCacheable(url)) {
-                      try {
-                        final content = await controller.evaluateJavascript(
-                            source: '''
-                        (function() {
-                          const element = document.querySelector('[src="${url}"]');
-                          return element ? element.outerHTML : null;
-                        })()
-                      '''
-                        );
+@override
+Widget build(BuildContext context) {
+  return WillPopScope(
+    onWillPop: () async {
+      if (await _webViewController!.canGoBack()) {
+        await _webViewController!.goBack();
+        return false;
+      }
+      return true;
+    },
+    child: Scaffold(
+      body: SafeArea(
+        child: Stack(
+          children: [
+            InAppWebView(
+              initialUrlRequest: URLRequest(
+                url: Uri.parse(_urls[0]),
+                headers: {
+                  'Cache-Control': 'max-age=3600',
+                  'Accept': 'text/html,application/json',
+                  'Accept-Encoding': 'gzip, deflate',
+                },
+              ),
+              initialOptions: _options,
+              onWebViewCreated: (InAppWebViewController controller) async {
+                _webViewController = controller;
 
-                        if (content != null) {
-                          await _cacheManager.cacheResource(url, content.toString());
-                        }
-                      } catch (e) {
-                        debugPrint('Error caching resource: $e');
-                      }
+                controller.addJavaScriptHandler(
+                  handlerName: 'handleUrl',
+                  callback: (args) async {
+                    if (args.isNotEmpty) {
+                      final url = args[0].toString();
+                      await _handleExternalUrl(url);
                     }
                   },
-                ),
-                if (_isLoading)
-                  Container(
-                    color: Colors.white.withOpacity(0.8),
-                    child: Column(
-                      children: [
-                        LinearProgressIndicator(
-                          value: _progress,
-                          backgroundColor: Colors.grey[300],
-                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-                        ),
-                        // if (_isLoading)
-                        //   Expanded(
-                        //     child: Center(
-                        //       child: Column(
-                        //         mainAxisAlignment: MainAxisAlignment.center,
-                        //         children: [
-                        //           LoadingAnimationWidget.staggeredDotsWave(
-                        //             color: Colors.blue,
-                        //             size: 50,
-                        //           ),
-                        //           const SizedBox(height: 20),
-                        //           Text(
-                        //             _isInitialLoad
-                        //                 ? 'جاري التحميل...'
-                        //                 : '${(_progress * 100).toInt()}%',
-                        //             style: const TextStyle(
-                        //               fontSize: 16,
-                        //               color: Colors.blue,
-                        //               fontWeight: FontWeight.w500,
-                        //             ),
-                        //           ),
-                        //         ],
-                        //       ),
-                        //     ),
-                        //   ),
-                      ],
-                    ),
-                  ),
-              ],
+                );
+              },
+              onLoadStart: _onLoadStart,
+              onProgressChanged: _onProgressChanged,
+              onLoadStop: (controller, url) async {
+                await controller.evaluateJavascript(source: _injectedScript);
+              },
+              onLoadError: _onLoadError,
+              onLoadResource: (controller, resource) async {
+                final url = resource.url.toString();
+                if (_CacheableResource.isCacheable(url)) {
+                  try {
+                    final content = await controller.evaluateJavascript(
+                        source: '''
+                    (function() {
+                      const element = document.querySelector('[src="${url}"]');
+                      return element ? element.outerHTML : null;
+                    })()
+                  '''
+                    );
+
+                    if (content != null) {
+                      await _cacheManager.cacheResource(url, content.toString());
+                    }
+                  } catch (e) {
+                    debugPrint('Error caching resource: $e');
+                  }
+                }
+              },
+              shouldOverrideUrlLoading: (controller, navigationAction) async {
+                final url = navigationAction.request.url?.toString() ?? '';
+
+                if (_shouldHandleExternally(url)) {
+                  await _handleExternalUrl(url);
+                  return NavigationActionPolicy.CANCEL;
+                }
+
+                return NavigationActionPolicy.ALLOW;
+              },
             ),
-          ),
-          bottomNavigationBar: CurvedNavigationBar(
-            backgroundColor: Colors.white,
-            color: Colors.blue,
-            buttonBackgroundColor: Colors.blue,
-            height: 60,
-            index: _currentIndex,
-            onTap: _onBottomNavTapped,
-            items: const [
-              Icon(Icons.home, color: Colors.white),
-              Icon(Icons.phone_iphone, color: Colors.white),
-              Icon(Icons.camera_alt, color: Colors.white),
-              Icon(Icons.laptop, color: Colors.white),
-              Icon(Icons.videogame_asset, color: Colors.white),
-              Icon(Icons.headphones, color: Colors.white),
-            ],
-          ),
+            if (_isLoading)
+              Container(
+                color: Colors.white.withOpacity(0.8),
+                child: Column(
+                  children: [
+                    LinearProgressIndicator(
+                      value: _progress,
+                      backgroundColor: Colors.grey[300],
+                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                    ),
+                  ],
+                ),
+              ),
+          ],
         ),
-      );
-    }
+      ),
+      bottomNavigationBar: CurvedNavigationBar(
+        backgroundColor: Colors.white,
+        color: Colors.blue,
+        buttonBackgroundColor: Colors.blue,
+        height: 60,
+        index: _currentIndex,
+        onTap: _onBottomNavTapped,
+        items: const [
+          Icon(Icons.home, color: Colors.white),
+          Icon(Icons.phone_iphone, color: Colors.white),
+          Icon(Icons.camera_alt, color: Colors.white),
+          Icon(Icons.laptop, color: Colors.white),
+          Icon(Icons.videogame_asset, color: Colors.white),
+          Icon(Icons.headphones, color: Colors.white),
+        ],
+      ),
+    ),
+  );
+}
 
 
 
@@ -860,6 +859,9 @@
           url.startsWith('intent://') ||
           url.startsWith('fb://') ||
           url.contains('api.whatsapp.com') ||
+          //instagram
+          url.contains('instagram.com')||
+
           url.contains('facebook.com') ||
           url.contains('messenger.com') ||
           url.contains('tiktok.com') ||
