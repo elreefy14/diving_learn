@@ -1,10 +1,10 @@
   import 'dart:async';
 
   import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:curved_navigation_bar/curved_navigation_bar.dart';
+  import 'package:curved_navigation_bar/curved_navigation_bar.dart';
   import 'package:flutter/material.dart';
   import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:loading_animation_widget/loading_animation_widget.dart';
+  import 'package:loading_animation_widget/loading_animation_widget.dart';
   import 'package:url_launcher/url_launcher.dart';
   import 'package:fluttertoast/fluttertoast.dart';
 
@@ -39,279 +39,139 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
     InAppWebViewController? _webViewController;
     bool _isLoading = true;
     int _cartCount = 0;
+    final CacheManager _cacheManager = CacheManager();
     bool _isShowingNoConnection = false;
     final Connectivity _connectivity = Connectivity();
     late StreamSubscription<ConnectivityResult> _connectivitySubscription;
     double _progress = 0;
+    bool _isNavigating = false;
+    Timer? _navigationDebouncer;
+    String _currentUrl = '';
+    bool _isInitialLoad = true;
     int _currentIndex = 0;
+    // Optimize script injection timing
     void _injectRemovalScript(InAppWebViewController controller) async {
-      await controller.evaluateJavascript(source: '''
-    function removeUnwantedElements() {
-      // Remove specific popup
-      const popup = document.querySelector('.popup__message-container.relative.image-mobile-left.image-desktop-left');
-      if (popup) {
-        popup.remove();
-      }
+      if (!mounted) return;
 
-      // Header modifications
-      const header = document.querySelector('header.header');
-      if (header) {
-        // Set header styles
-        header.style.minHeight = '80px';
-        header.style.maxHeight = '80px';
-        header.style.height = '80px';
-        header.style.padding = '10px 0';
-        
-        // Remove all menu/drawer buttons, preserve only search
-        const menuSelectors = [
-          '[class*="menu-button"]',
-          '[class*="menu_button"]',
-          '.drawer-trigger',
-          '[class*="menu-icon"]',
-          '[class*="hamburger"]',
-          '[aria-label*="Menu"]',
-          '[aria-label*="menu"]',
-          '.menu-toggle',
-          '.drawer-toggle',
-          '[class*="drawer"]'
-        ];
-        
-        menuSelectors.forEach(selector => {
-          const elements = header.querySelectorAll(selector);
-          elements.forEach(el => el.remove());
-        });
-        
-        // Remove logo and its container
-        const logoSelectors = [
-          '.header__logo',
-          '.header__logo-image',
-          '.header__logo-link',
-          '.header-logo',
-          '.header-logo__link',
-          '[class*="logo-container"]',
-          '[class*="logo_wrapper"]'
-        ];
-        
-        logoSelectors.forEach(selector => {
-          const elements = header.querySelectorAll(selector);
-          elements.forEach(element => {
-            if (!element.innerHTML.includes('search') && 
-                !element.classList.contains('search') && 
-                !element.querySelector('[class*="search"]')) {
-              element.remove();
-            }
-          });
-        });
-
-        // Preserve search while removing home links
-        const homeLinks = header.querySelectorAll('a[href="/"]');
-        homeLinks.forEach(link => {
-          if (!link.innerHTML.includes('search') && 
-              !link.classList.contains('search') && 
-              !link.querySelector('[class*="search"]')) {
-            const images = link.getElementsByTagName('img');
-            if (images.length > 0) {
-              link.remove();
-            }
-          }
-        });
-
-        // Hide announcement bar if exists
-        const announcement = document.querySelector('.announcement-bar, [class*="announcement"]');
-        if (announcement) {
-          announcement.style.display = 'none';
-        }
-        
-        // Adjust navigation layout and ensure search remains visible
-        const nav = header.querySelector('nav, [class*="navigation"]');
-        if (nav) {
-          nav.style.padding = '0 15px';
-          nav.style.margin = '0';
-          
-          // Ensure only search icon remains visible
-          const searchElements = nav.querySelectorAll('[class*="search"]');
-          searchElements.forEach(el => {
-            el.style.display = 'block';
-            el.style.opacity = '1';
-            el.style.visibility = 'visible';
-          });
-        }
-      }
-      
-      // Remove floating elements and popups
-      const elementsToRemove = document.querySelectorAll(`
-        .waba-floating-button,
-        .wa-chat-box,
-        .floating-whatsapp,
-        [class*="float"],
-        [class*="popup"],
-        [id*="popup"],
-        [class*="modal"]:not([class*="search"]),
-        [id*="modal"]:not([id*="search"]),
-        .announcement,
-        .announcement-bar,
-        [class*="promo-bar"],
-        [class*="promotional"],
-        [class*="drawer"],
-        [class*="menu-drawer"]
-      `);
-      
-      elementsToRemove.forEach(el => {
-        if (!el.innerHTML.includes('search') && 
-            !el.classList.contains('search') && 
-            !el.querySelector('[class*="search"]')) {
-          el.remove();
-        }
+      // Debounce script injection
+      _navigationDebouncer?.cancel();
+      _navigationDebouncer = Timer(const Duration(milliseconds: 100), () async {
+        await controller.evaluateJavascript(source: _hideElementsScript);
       });
-      
-      // Remove fixed elements with high z-index while preserving search
-      document.querySelectorAll('*').forEach(el => {
-        const style = window.getComputedStyle(el);
-        if (style.position === 'fixed' && parseInt(style.zIndex, 10) > 100) {
-          if (!el.classList.contains('progress-bar') && 
-              !el.classList.contains('navigation') &&
-              !el.classList.contains('bottom-nav') &&
-              !el.innerHTML.includes('search') &&
-              !el.classList.contains('search') &&
-              !el.querySelector('[class*="search"]')) {
-            el.remove();
-          }
-        }
-      });
-    }
-
-    removeUnwantedElements();
-    setTimeout(removeUnwantedElements, 500);
-
-    const observer = new MutationObserver(() => {
-      removeUnwantedElements();
-    });
-    
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      characterData: true,
-      attributeFilter: ['style', 'class']
-    });
-    
-    window.addEventListener('load', removeUnwantedElements);
-    document.addEventListener('DOMContentLoaded', removeUnwantedElements);
-    window.addEventListener('resize', removeUnwantedElements);
-    document.addEventListener('scroll', () => {
-      requestAnimationFrame(removeUnwantedElements);
-    });
-  ''');
-
-      // Viewport adjustment
-      await controller.evaluateJavascript(source: '''
-    const viewport = document.querySelector('meta[name="viewport"]');
-    if (viewport) {
-      viewport.setAttribute('content', 'width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no');
-    }
-  ''');
     }
     final String _hideElementsScript = '''
-    (function() {
-      function hideElements() {
-        // Hide WhatsApp floating button
-        var whatsappButton = document.querySelector('.waba-floating-button');
-        if (whatsappButton) {
-          whatsappButton.style.display = 'none';
-        }
-
-        // Hide any general floating buttons
-        var floatingButtons = document.querySelectorAll('.floating-button, .float-button, .fixed-button, [class*="float"], [class*="popup"], [class*="modal"]');
-        floatingButtons.forEach(function(button) {
-          button.style.display = 'none';
-        });
-
-        // Remove fixed positions that might be used for popups
-        var fixedElements = document.querySelectorAll('[style*="position: fixed"]');
-        fixedElements.forEach(function(element) {
-          if (element.style.zIndex > 100) {
-            element.style.display = 'none';
+      (function() {
+        function hideElements() {
+          // Hide WhatsApp floating button
+          var whatsappButton = document.querySelector('.waba-floating-button');
+          if (whatsappButton) {
+            whatsappButton.style.display = 'none';
           }
+  
+          // Hide any general floating buttons
+          var floatingButtons = document.querySelectorAll('.floating-button, .float-button, .fixed-button, [class*="float"], [class*="popup"], [class*="modal"]');
+          floatingButtons.forEach(function(button) {
+            button.style.display = 'none';
+          });
+  
+          // Remove fixed positions that might be used for popups
+          var fixedElements = document.querySelectorAll('[style*="position: fixed"]');
+          fixedElements.forEach(function(element) {
+            if (element.style.zIndex > 100) {
+              element.style.display = 'none';
+            }
+          });
+        }
+        
+        // Run initially
+        hideElements();
+        
+        // Create an observer for dynamic content
+        var observer = new MutationObserver(function(mutations) {
+          hideElements();
         });
-      }
-      
-      // Run initially
-      hideElements();
-      
-      // Create an observer for dynamic content
-      var observer = new MutationObserver(function(mutations) {
-        hideElements();
-      });
-      
-      // Start observing
-      observer.observe(document.body, {
-        childList: true,
-        subtree: true,
-        attributes: true,
-        attributeFilter: ['style', 'class']
-      });
-
-      // Additional cleanup
-      window.onload = function() {
-        hideElements();
-      };
-    })();
-  ''';
+        
+        // Start observing
+        observer.observe(document.body, {
+          childList: true,
+          subtree: true,
+          attributes: true,
+          attributeFilter: ['style', 'class']
+        });
+  
+        // Additional cleanup
+        window.onload = function() {
+          hideElements();
+        };
+      })();
+    ''';
 
     // Update _onWebViewCreated to inject the script
     void _onWebViewCreated(InAppWebViewController controller) {
       _webViewController = controller;
       WebViewUrlHandler.setWebViewController(controller);
 
-      // Add handler for cart count
+      // Add single handler for all events
       controller.addJavaScriptHandler(
-        handlerName: 'updateCartCount',
-        callback: (args) {
-          if (mounted) {
-            setState(() {
-              _cartCount = int.tryParse(args[0]?.toString() ?? '0') ?? 0;
-            });
+        handlerName: 'webviewHandler',
+        callback: (args) async {
+          if (!mounted) return;
+
+          final String type = args[0];
+          switch(type) {
+            case 'cartCount':
+              setState(() {
+                _cartCount = int.tryParse(args[1]?.toString() ?? '0') ?? 0;
+              });
+              break;
+            case 'hideFloating':
+           //   await _injectHidingScript(controller);
+              break;
           }
           return null;
         },
       );
 
-      // Inject script to hide only floating button
-      controller.addJavaScriptHandler(
-        handlerName: 'hideFloatingButton',
-        callback: (args) async {
-          await _injectHidingScript(controller);
-          return null;
-        },
-      );
-      _injectHidingScript(controller);
+      // Initial script injection
+    //  _injectHidingScript(controller);
     }
 
     Future<void> _injectHidingScript(InAppWebViewController controller) async {
       await controller.evaluateJavascript(source: '''
-    function hideFloatingButton() {
-      const elements = document.querySelectorAll('.waba-floating-button, .wa-chat-box, .floating-whatsapp');
-      elements.forEach(el => el.style.display = 'none');
-    }
-    hideFloatingButton();
-    new MutationObserver(hideFloatingButton).observe(document.body, {
-      childList: true, subtree: true
-    });
-  ''');
-    }
-
-
-
-
-    void _onLoadStop(InAppWebViewController controller, Uri? url) {
-      if (mounted) {
-        setState(() => _isLoading = false);
-        controller.evaluateJavascript(source: '''
-      var cartCount = document.querySelector('.cart-count-bubble')?.textContent || '0';
-      window.flutter_inappwebview.callHandler('updateCartCount', cartCount);
-    ''');
-        _injectHidingScript(controller);
+      function hideFloatingButton() {
+        const elements = document.querySelectorAll('.waba-floating-button, .wa-chat-box, .floating-whatsapp');
+        elements.forEach(el => el.style.display = 'none');
       }
+      hideFloatingButton();
+      new MutationObserver(hideFloatingButton).observe(document.body, {
+        childList: true, subtree: true
+      });
+    ''');
+    }
+
+
+
+
+
+
+// Update onLoadStop for better transition
+    // Update onLoadStop to properly handle loading states
+    void _onLoadStop(InAppWebViewController controller, Uri? url) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+        _isNavigating = false;
+        _isInitialLoad = false;
+        _progress = 1.0;
+      });
+
+      // No delay needed here - we want to hide loading immediately
+      controller.evaluateJavascript(source: '''
+    var cartCount = document.querySelector('.cart-count-bubble')?.textContent || '0';
+    window.flutter_inappwebview.callHandler('updateCartCount', cartCount);
+  ''');
+   //   _injectHidingScript(controller);
     }
 
 
@@ -486,9 +346,51 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
         ),
       );
     }
+     _handleNavigation(String newUrl) async {
+      if (newUrl.isEmpty || newUrl == _currentUrl) return;
 
-    // Update onBottomNavTapped to handle accessories tab
-    void _onBottomNavTapped(int index) {
+      try {
+        // Cancel any pending navigation
+        _navigationDebouncer?.cancel();
+
+        setState(() {
+          _isLoading = true;
+          _progress = 0;
+          _isNavigating = true;
+        });
+
+        // Clear current page if any
+        await _webViewController?.stopLoading();
+
+        // Load new URL
+        await _webViewController?.loadUrl(
+          urlRequest: URLRequest(
+            url: Uri.parse(newUrl),
+            headers: {
+              'Cache-Control': 'max-age=3600',
+              'Accept': 'text/html,application/json',
+              'Accept-Encoding': 'gzip, deflate',
+            },
+          ),
+        );
+
+        _currentUrl = newUrl; // Update the current URL
+      } catch (e) {
+        debugPrint('Error during navigation: $e');
+        setState(() {
+          _isLoading = false;
+          _isNavigating = false;
+        });
+      }
+    }
+
+// Update bottom navigation handler
+
+
+    void _onBottomNavTapped(int index) async {
+      // Prevent navigation while already navigating
+      if (_isNavigating) return;
+
       setState(() {
         _currentIndex = index;
       });
@@ -498,56 +400,54 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
       } else if (index == 5) { // Accessories tab
         _showAccessoriesBottomSheet();
       } else {
-        _loadUrl(_urls[index]);
+        await _handleNavigation(_urls[index]);
       }
     }
 
-    final InAppWebViewGroupOptions _options = InAppWebViewGroupOptions(
-      crossPlatform: InAppWebViewOptions(
 
-        verticalScrollBarEnabled: true,
-        horizontalScrollBarEnabled: false,
-        transparentBackground: true,
+    late final InAppWebViewGroupOptions _options = InAppWebViewGroupOptions(
+      crossPlatform: InAppWebViewOptions(
         useShouldOverrideUrlLoading: true,
         mediaPlaybackRequiresUserGesture: false,
-        useOnLoadResource: true,
         cacheEnabled: true,
         clearCache: false,
         preferredContentMode: UserPreferredContentMode.MOBILE,
-        applicationNameForUserAgent: 'TrustKsa/1.0',
+        //allowsInlineMediaPlayback: true,
         javaScriptEnabled: true,
-        disableHorizontalScroll: false,
-        disableVerticalScroll: false,
-        javaScriptCanOpenWindowsAutomatically: false, // Prevent window.open()
+        transparentBackground: true,
+        // Resource optimization
+        resourceCustomSchemes: ['tel', 'mailto'],
+        minimumFontSize: 10,
+        useOnLoadResource: true,
+        // Reduce memory usage
+        incognito: false,
         supportZoom: false,
       ),
       android: AndroidInAppWebViewOptions(
-
-        useWideViewPort: true,
-        loadWithOverviewMode: true,
-        displayZoomControls: false,
-        builtInZoomControls: false,
         useHybridComposition: true,
+        mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+        safeBrowsingEnabled: false,
+        // Cache optimization
         cacheMode: AndroidCacheMode.LOAD_CACHE_ELSE_NETWORK,
-        supportMultipleWindows: false,
-
+        allowContentAccess: true,
+        allowFileAccess: true,
+        // Database optimization
         databaseEnabled: true,
         domStorageEnabled: true,
-        saveFormData: false,
-        blockNetworkImage: false,
-        blockNetworkLoads: false,
+        // Layout optimization
+        loadWithOverviewMode: true,
+        useWideViewPort: true,
+        // Performance optimization
+        hardwareAcceleration: true,
       ),
       ios: IOSInAppWebViewOptions(
         allowsInlineMediaPlayback: true,
-        allowsLinkPreview: false,
-        //enableViewportScale: false,
-        suppressesIncrementalRendering: false,
-        allowsBackForwardNavigationGestures: false,
-        disableLongPressContextMenuOnLinks: true,
-        enableViewportScale: true,
-        automaticallyAdjustsScrollIndicatorInsets: true,
-       // allowsPopups: false, // Prevent popups on iOS
-
+        allowsBackForwardNavigationGestures: true,
+        // Cache optimization
+        enableViewportScale: false,
+        // Performance optimization
+        isFraudulentWebsiteWarningEnabled: false,
+        //isPrefetchingEnabled: true,
       ),
     );
 
@@ -618,20 +518,49 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
       );
     }
 
-    void _loadUrl(String url) {
-      _webViewController?.loadUrl(
-        urlRequest: URLRequest(
-          url: Uri.parse(url),
-          headers: {'Cache-Control': 'max-age=3600'},
-        ),
-      );
+
+// Optimize page loading
+    void _loadUrl(String url) async {
+      if (url.isEmpty) return;
+
+      // Cancel any pending operations
+      _navigationDebouncer?.cancel();
+
+      setState(() {
+        _isLoading = true;
+        _progress = 0;
+        _isNavigating = true;
+      });
+
+      try {
+        if (_webViewController != null) {
+          await _webViewController!.loadUrl(
+            urlRequest: URLRequest(
+              url: Uri.parse(url),
+              headers: {
+                'Cache-Control': 'max-age=3600',
+                'Accept': 'text/html,application/json',
+                'Accept-Encoding': 'gzip, deflate',
+              },
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('Error loading URL: $e');
+        setState(() {
+          _isLoading = false;
+          _isNavigating = false;
+        });
+      }
     }
+
+
 
 
     void _initWebView() async {
       //if (Platform.isAndroid) {
-        await AndroidInAppWebViewController.setWebContentsDebuggingEnabled(false);
-     // }
+      await AndroidInAppWebViewController.setWebContentsDebuggingEnabled(false);
+      // }
     }
 
     void _setupConnectivity() {
@@ -644,36 +573,36 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
 
     @override
     void dispose() {
+      _navigationDebouncer?.cancel();
       WebViewUrlHandler.setWebViewController(null);
       _connectivitySubscription.cancel();
       super.dispose();
     }
 
-
     // Updated JavaScript code to include TikTok
     final String _injectedScript = '''
-      document.addEventListener('click', function(e) {
-        var target = e.target;
-        while (target != null) {
-          if (target.tagName === 'A') {
-            var href = target.getAttribute('href');
-            if (href && (href.startsWith('whatsapp://') || 
-                         href.startsWith('intent://') || 
-                         href.startsWith('fb://') ||
-                         href.includes('api.whatsapp.com') ||
-                         href.includes('facebook.com') ||
-                         href.includes('tiktok.com') ||
-                         href.startsWith('snssdk1233://') ||
-                         href.startsWith('tiktoken://'))) {
-              e.preventDefault();
-              window.flutter_inappwebview.callHandler('handleUrl', href);
-              return false;
+        document.addEventListener('click', function(e) {
+          var target = e.target;
+          while (target != null) {
+            if (target.tagName === 'A') {
+              var href = target.getAttribute('href');
+              if (href && (href.startsWith('whatsapp://') || 
+                           href.startsWith('intent://') || 
+                           href.startsWith('fb://') ||
+                           href.includes('api.whatsapp.com') ||
+                           href.includes('facebook.com') ||
+                           href.includes('tiktok.com') ||
+                           href.startsWith('snssdk1233://') ||
+                           href.startsWith('tiktoken://'))) {
+                e.preventDefault();
+                window.flutter_inappwebview.callHandler('handleUrl', href);
+                return false;
+              }
             }
+            target = target.parentElement;
           }
-          target = target.parentElement;
-        }
-      }, true);
-    ''';
+        }, true);
+      ''';
 
 
 
@@ -719,24 +648,98 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
 
 
 
+    // Update onLoadStart for better state management
     void _onLoadStart(InAppWebViewController controller, Uri? url) {
       if (mounted) {
-        setState(() => _isLoading = true);
-        _injectRemovalScript(controller);
+        setState(() {
+          _isLoading = true;
+          _progress = 0;
+        });
+      //  _injectRemovalScript(controller);
       }
     }
 
-
+// Update onProgressChanged for smoother loading feedback
     void _onProgressChanged(InAppWebViewController controller, int progress) {
       if (!mounted) return;
-      setState(() {
-        _progress = progress / 100;
-        _isLoading = _progress < 1.0;
-      });
-      if (progress > 50) {
-        _injectRemovalScript(controller);
-      }
+
+      final newProgress = progress / 100;
+    //  if ((newProgress - _progress).abs() > 0.1) {
+        setState(() {
+          _progress = newProgress;
+          _isLoading = _progress < 0.9; // Change threshold
+        });
+    //  }
     }
+
+
+    // Update build method to show better loading state
+    // Future<Resource?> _resourceInterceptor(Resource resource) async {
+    //   if (!_CacheableResource.isCacheable(resource.url.toString())) {
+    //     return resource;
+    //   }
+    //
+    //   final cachedResource = await _cacheManager.getCachedResource(resource);
+    //   if (cachedResource != null) {
+    //     return cachedResource;
+    //   }
+    //
+    //   await _cacheManager.cacheResource(resource);
+    //   return resource;
+    // }
+
+    // Optimize page loading
+
+    // Progressive loading indicator
+
+    // Optimized load completion handler
+
+    // Performance optimization scripts
+    Future<void> _injectOptimizationScripts(InAppWebViewController controller) async {
+      const optimizationScript = '''
+      // Lazy load images
+      document.addEventListener('DOMContentLoaded', function() {
+        var lazyImages = [].slice.call(document.querySelectorAll('img[data-src]'));
+        
+        if ('IntersectionObserver' in window) {
+          let lazyImageObserver = new IntersectionObserver(function(entries, observer) {
+            entries.forEach(function(entry) {
+              if (entry.isIntersecting) {
+                let lazyImage = entry.target;
+                lazyImage.src = lazyImage.dataset.src;
+                lazyImage.removeAttribute('data-src');
+                lazyImageObserver.unobserve(lazyImage);
+              }
+            });
+          });
+
+          lazyImages.forEach(function(lazyImage) {
+            lazyImageObserver.observe(lazyImage);
+          });
+        }
+      });
+
+      // Defer non-critical resources
+      window.addEventListener('load', function() {
+        const deferredElements = document.querySelectorAll('[data-defer]');
+        deferredElements.forEach(element => {
+          setTimeout(() => {
+            if (element.tagName === 'SCRIPT') {
+              const script = document.createElement('script');
+              script.src = element.getAttribute('data-defer');
+              document.body.appendChild(script);
+            } else if (element.tagName === 'LINK') {
+              element.href = element.getAttribute('data-defer');
+            }
+          }, 100);
+        });
+      });
+    ''';
+
+      await controller.evaluateJavascript(source: optimizationScript);
+    }
+
+    @override
 
     @override
     Widget build(BuildContext context) {
@@ -753,36 +756,79 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
             child: Stack(
               children: [
                 InAppWebView(
-                  key: const ValueKey('main_webview'),
                   initialUrlRequest: URLRequest(
                     url: Uri.parse(_urls[0]),
-                    headers: {'Cache-Control': 'max-age=3600'},
+                    headers: {
+                      'Cache-Control': 'max-age=3600',
+                      'Accept': 'text/html,application/json',
+                      'Accept-Encoding': 'gzip, deflate',
+                    },
                   ),
                   initialOptions: _options,
                   onWebViewCreated: _onWebViewCreated,
                   onLoadStart: _onLoadStart,
                   onProgressChanged: _onProgressChanged,
                   onLoadStop: _onLoadStop,
+                  onLoadError: _onLoadError,
+                  onLoadResource: (controller, resource) async {
+                    final url = resource.url.toString();
+                    if (_CacheableResource.isCacheable(url)) {
+                      try {
+                        final content = await controller.evaluateJavascript(
+                            source: '''
+                        (function() {
+                          const element = document.querySelector('[src="${url}"]');
+                          return element ? element.outerHTML : null;
+                        })()
+                      '''
+                        );
+
+                        if (content != null) {
+                          await _cacheManager.cacheResource(url, content.toString());
+                        }
+                      } catch (e) {
+                        debugPrint('Error caching resource: $e');
+                      }
+                    }
+                  },
                 ),
                 if (_isLoading)
-                  Column(
-                    children: [
-                      LinearProgressIndicator(
-                        value: _progress,
-                        backgroundColor: Colors.grey[300],
-                        valueColor:
-                        AlwaysStoppedAnimation<Color>(Colors.blue),
-                      ),
-                      Expanded(
-                        child: Center(
-                          child: Text(
-                            '${(_progress * 100).toInt()}% Loading...',
-                            style: TextStyle(
-                                fontSize: 16, color: Colors.black54),
-                          ),
+                  Container(
+                    color: Colors.white.withOpacity(0.8),
+                    child: Column(
+                      children: [
+                        LinearProgressIndicator(
+                          value: _progress,
+                          backgroundColor: Colors.grey[300],
+                          valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
                         ),
-                      ),
-                    ],
+                        // if (_isLoading)
+                        //   Expanded(
+                        //     child: Center(
+                        //       child: Column(
+                        //         mainAxisAlignment: MainAxisAlignment.center,
+                        //         children: [
+                        //           LoadingAnimationWidget.staggeredDotsWave(
+                        //             color: Colors.blue,
+                        //             size: 50,
+                        //           ),
+                        //           const SizedBox(height: 20),
+                        //           Text(
+                        //             _isInitialLoad
+                        //                 ? 'جاري التحميل...'
+                        //                 : '${(_progress * 100).toInt()}%',
+                        //             style: const TextStyle(
+                        //               fontSize: 16,
+                        //               color: Colors.blue,
+                        //               fontWeight: FontWeight.w500,
+                        //             ),
+                        //           ),
+                        //         ],
+                        //       ),
+                        //     ),
+                        //   ),
+                      ],
+                    ),
                   ),
               ],
             ),
@@ -821,50 +867,56 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
           url.startsWith('tiktoken://');       // Alternative TikTok app scheme
     }
 
-    Future<void> _handleExternalUrl(String url) async {
-      try {
-        debugPrint('Handling external URL: $url');
+   Future<void> _handleExternalUrl(String url) async {
+  try {
+    debugPrint('Handling external URL: $url');
 
-        // Handle TikTok URLs
-        if (url.contains('tiktok.com') ||
-            url.startsWith('snssdk1233://') ||
-            url.startsWith('tiktoken://')) {
-          final tiktokUrl = _processTikTokUrl(url);
-          debugPrint('Using TikTok URL: $tiktokUrl');
-          await _launchUrl(tiktokUrl);
-          return;
-        }
+    // Handle TikTok URLs
+    if (url.contains('tiktok.com') ||
+        url.startsWith('snssdk1233://') ||
+        url.startsWith('tiktoken://')) {
+      final tiktokUrl = _processTikTokUrl(url);
+      debugPrint('Using TikTok URL: $tiktokUrl');
+      await _launchUrl(tiktokUrl);
+      return;
+    }
 
-        // Handle Facebook intent URLs
-        if (url.startsWith('intent://')) {
-          if (url.contains('browser_fallback_url=')) {
-            final fallbackUrl = Uri.decodeFull(
-                url.split('browser_fallback_url=')[1].split(';')[0]
-            );
-            debugPrint('Using Facebook fallback URL: $fallbackUrl');
-            await _launchUrl(fallbackUrl);
-            return;
-          }
-        }
-
-        // Handle WhatsApp URLs
-        if (url.contains('whatsapp') || url.contains('wa.me')) {
-          final whatsappUrl = url
-              .replaceAll('whatsapp://', 'https://api.whatsapp.com/')
-              .replaceAll('send/?', 'send?');
-          debugPrint('Using WhatsApp URL: $whatsappUrl');
-          await _launchUrl(whatsappUrl);
-          return;
-        }
-
-        // Handle all other URLs
-        await _launchUrl(url);
-
-      } catch (e) {
-        debugPrint('Error handling URL: $e');
-        _showToast('Unable to open link');
+    // Handle Facebook intent URLs
+    if (url.startsWith('intent://')) {
+      if (url.contains('browser_fallback_url=')) {
+        final fallbackUrl = Uri.decodeFull(
+            url.split('browser_fallback_url=')[1].split(';')[0]
+        );
+        debugPrint('Using Facebook fallback URL: $fallbackUrl');
+        await _launchUrl(fallbackUrl);
+        return;
       }
     }
+
+    // Handle WhatsApp URLs
+    if (url.contains('whatsapp') || url.contains('wa.me')) {
+      final whatsappUrl = url
+          .replaceAll('whatsapp://', 'https://api.whatsapp.com/')
+          .replaceAll('send/?', 'send?');
+      debugPrint('Using WhatsApp URL: $whatsappUrl');
+      await _launchUrl(whatsappUrl);
+      return;
+    }
+
+    // Handle all other URLs
+    if (_shouldHandleExternally(url)) {
+      await _launchUrl(url);
+    } else {
+      // Handle internally if needed
+      debugPrint('Handling URL internally: $url');
+      // Add your internal handling logic here
+    }
+
+  } catch (e) {
+    debugPrint('Error handling URL: $e');
+    _showToast('Unable to open link');
+  }
+}
 
     String _processTikTokUrl(String url) {
       // Handle various TikTok URL formats
@@ -886,20 +938,43 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
       return url;
     }
 
-    Future<void> _launchUrl(String url) async {
-      try {
-        final uri = Uri.parse(url);
-        if (await canLaunchUrl(uri)) {
-          await launchUrl(uri, mode: LaunchMode.externalApplication);
-        } else {
-          _showToast('Unable to open link');
-        }
-      } catch (e) {
-        debugPrint('Error launching URL: $e');
+Future<void> _launchUrl(String url) async {
+  try {
+    final uri = Uri.parse(url);
+
+    // Check if the URL should be handled externally
+    if (url.contains('tiktok.com') ||
+        url.contains('instagram.com') ||
+        url.contains('whatsapp.com') ||
+        url.contains('facebook.com') ||
+        url.startsWith('whatsapp://') ||
+        url.startsWith('instagram://') ||
+        url.startsWith('fb://') ||
+        url.startsWith('whatsapp://') ||
+        url.startsWith('intent://') ||
+        url.startsWith('fb://') ||
+        url.contains('api.whatsapp.com') ||
+        url.contains('facebook.com') ||
+        url.contains('messenger.com') ||
+        url.contains('tiktok.com') ||
+        url.startsWith('snssdk1233://') ||  // TikTok app scheme
+        url.startsWith('tiktoken://')||       // Alternative TikTok app scheme
+        url.startsWith('tiktok://')) {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
         _showToast('Unable to open link');
       }
+    } else {
+      // Handle internally if needed
+      debugPrint('Handling URL internally: $url');
+      // Add your internal handling logic here
     }
-
+  } catch (e) {
+    debugPrint('Error launching URL: $e');
+    _showToast('Unable to open link');
+  }
+}
     void _showToast(String message) {
       Fluttertoast.showToast(
         msg: message,
@@ -933,7 +1008,7 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
     }
 
 
-// Add search dialog implementation
+  // Add search dialog implementation
     Future<void> _showSearchDialog(BuildContext context) async {
       final TextEditingController searchController = TextEditingController();
 
@@ -1124,5 +1199,38 @@ import 'package:loading_animation_widget/loading_animation_widget.dart';
           ),
         ),
       );
+    }
+  }
+  // Cache manager for optimized resource handling
+  class CacheManager {
+    final Map<String, String> _cache = {};
+    final int _maxCacheSize = 100;
+
+    Future<String?> getCachedResource(String url) async {
+      return _cache[url];
+    }
+
+    Future<void> cacheResource(String url, String content) async {
+      if (_cache.length >= _maxCacheSize) {
+        _cache.remove(_cache.keys.first);
+      }
+      _cache[url] = content;
+    }
+
+    bool hasCachedResource(String url) {
+      return _cache.containsKey(url);
+    }
+
+    void dispose() {
+      _cache.clear();
+    }
+  }
+
+
+  // Helper class for determining cacheable resources
+  class _CacheableResource {
+    static bool isCacheable(String url) {
+      final cacheableExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.css', '.js'];
+      return cacheableExtensions.any((ext) => url.toLowerCase().endsWith(ext));
     }
   }

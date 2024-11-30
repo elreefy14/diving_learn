@@ -14,9 +14,13 @@ class DefaultNavigationBehave implements NavigationDelegateRepo {
     "https://g.co/kgs/mzYosC",
     "https://api.whatsapp.com/",
     "whatsapp://",
+    "https://wa.me/",
     "https://www.youtube.com",
     "https://www.snapchat.com",
     "https://www.instagram.com",
+    "instagram://",
+    "https://www.tiktok.com",
+    "tiktok://",
     "https://play.google.com",
     "https://apps.apple.com",
     "https://appgallery.huawei.com",
@@ -25,7 +29,10 @@ class DefaultNavigationBehave implements NavigationDelegateRepo {
     "fb://",
     "intent://",
     "facebook://",
-    "https://www.facebook.com"
+    "https://www.facebook.com",
+    "https://fb.me/",
+    "https://fb.watch/",
+    "https://m.facebook.com"
   ];
 
   bool _checkIfUrlBlackListed(String url) {
@@ -43,37 +50,70 @@ class DefaultNavigationBehave implements NavigationDelegateRepo {
     debugPrint('Attempting to launch URL: $url');
 
     try {
-      if (url.contains('api.whatsapp.com') || url.contains('whatsapp://')) {
-        // Extract phone number and text
+      // Handle WhatsApp URLs
+      if (url.contains('api.whatsapp.com') || url.contains('whatsapp://') || url.contains('wa.me')) {
         final Uri uri = Uri.parse(url);
-        final phone = uri.queryParameters['phone'] ?? '';
-        final text = uri.queryParameters['text'] ?? '';
+        String phone = '';
+        String text = '';
 
-        // Construct WhatsApp URL
-        String whatsappUrl = 'https://wa.me/$phone';
-        if (text.isNotEmpty) {
-          whatsappUrl += '?text=${Uri.encodeComponent(text)}';
+        // Extract phone and text based on URL format
+        if (url.contains('wa.me')) {
+          final parts = uri.path.replaceAll('/', '').split('?');
+          phone = parts[0];
+          if (uri.queryParameters.containsKey('text')) {
+            text = uri.queryParameters['text']!;
+          }
+        } else {
+          phone = uri.queryParameters['phone'] ?? '';
+          text = uri.queryParameters['text'] ?? '';
         }
 
-        debugPrint('Launching WhatsApp URL: $whatsappUrl');
-
-        // Try to launch WhatsApp app first
         final whatsappAppUrl = Uri.parse('whatsapp://send?phone=$phone${text.isNotEmpty ? '&text=${Uri.encodeComponent(text)}' : ''}');
+        final webUrl = Uri.parse('https://wa.me/$phone${text.isNotEmpty ? '?text=${Uri.encodeComponent(text)}' : ''}');
+
         if (await canLaunchUrl(whatsappAppUrl)) {
           await launchUrl(whatsappAppUrl, mode: LaunchMode.externalApplication);
-        } else {
-          // Fallback to web WhatsApp
-          final webUrl = Uri.parse(whatsappUrl);
-          if (await canLaunchUrl(webUrl)) {
-            await launchUrl(webUrl, mode: LaunchMode.externalApplication);
-          }
+        } else if (await canLaunchUrl(webUrl)) {
+          await launchUrl(webUrl, mode: LaunchMode.externalApplication);
         }
         return;
       }
 
-      // Handle regular URLs
+      // Handle Instagram URLs
+      if (url.contains('instagram.com')) {
+        final instagramAppUrl = Uri.parse('instagram://user?username=${Uri.parse(url).pathSegments.last}');
+        if (await canLaunchUrl(instagramAppUrl)) {
+          await launchUrl(instagramAppUrl, mode: LaunchMode.externalApplication);
+        } else {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+
+      // Handle TikTok URLs
+      if (url.contains('tiktok.com')) {
+        final tiktokAppUrl = Uri.parse('tiktok://user?username=${Uri.parse(url).pathSegments.last}');
+        if (await canLaunchUrl(tiktokAppUrl)) {
+          await launchUrl(tiktokAppUrl, mode: LaunchMode.externalApplication);
+        } else {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+
+      // Handle Facebook URLs
+      if (url.contains('facebook.com') || url.contains('fb.me') || url.contains('fb.watch')) {
+        final fbAppUrl = Uri.parse('fb://${Uri.parse(url).path}');
+        if (await canLaunchUrl(fbAppUrl)) {
+          await launchUrl(fbAppUrl, mode: LaunchMode.externalApplication);
+        } else {
+          await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
+        }
+        return;
+      }
+
+      // Handle all other URLs
       final uri = Uri.parse(url);
-      debugPrint('Launching URL: $uri');
       if (await canLaunchUrl(uri)) {
         await launchUrl(uri, mode: LaunchMode.externalApplication);
       } else {
@@ -89,14 +129,6 @@ class DefaultNavigationBehave implements NavigationDelegateRepo {
     final stringUrl = navigationAction.request.url.toString();
     log('URL intercepted: $stringUrl', name: "DefaultNavigationBehave");
 
-    // Check for WhatsApp URLs specifically
-    if (stringUrl.contains('api.whatsapp.com') || stringUrl.contains('whatsapp://')) {
-      debugPrint('WhatsApp URL detected: $stringUrl');
-      await _launchURL(stringUrl);
-      return NavigationActionPolicy.CANCEL;
-    }
-
-    // Check other blacklisted URLs
     if (_checkIfUrlBlackListed(stringUrl)) {
       debugPrint('Blacklisted URL detected: $stringUrl');
       await _launchURL(stringUrl);
