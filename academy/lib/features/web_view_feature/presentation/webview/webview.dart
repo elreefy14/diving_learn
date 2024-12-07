@@ -47,137 +47,8 @@
     bool _isNavigating = false;
     Timer? _navigationDebouncer;
     String _currentUrl = '';
-    bool _isInitialLoad = true;
     int _currentIndex = 0;
     // Optimize script injection timing
-    void _injectRemovalScript(InAppWebViewController controller) async {
-      if (!mounted) return;
-
-      // Debounce script injection
-      _navigationDebouncer?.cancel();
-      _navigationDebouncer = Timer(const Duration(milliseconds: 100), () async {
-        await controller.evaluateJavascript(source: _hideElementsScript);
-      });
-    }
-    final String _hideElementsScript = '''
-      (function() {
-        function hideElements() {
-          // Hide WhatsApp floating button
-          var whatsappButton = document.querySelector('.waba-floating-button');
-          if (whatsappButton) {
-            whatsappButton.style.display = 'none';
-          }
-  
-          // Hide any general floating buttons
-          var floatingButtons = document.querySelectorAll('.floating-button, .float-button, .fixed-button, [class*="float"], [class*="popup"], [class*="modal"]');
-          floatingButtons.forEach(function(button) {
-            button.style.display = 'none';
-          });
-  
-          // Remove fixed positions that might be used for popups
-          var fixedElements = document.querySelectorAll('[style*="position: fixed"]');
-          fixedElements.forEach(function(element) {
-            if (element.style.zIndex > 100) {
-              element.style.display = 'none';
-            }
-          });
-        }
-        
-        // Run initially
-        hideElements();
-        
-        // Create an observer for dynamic content
-        var observer = new MutationObserver(function(mutations) {
-          hideElements();
-        });
-        
-        // Start observing
-        observer.observe(document.body, {
-          childList: true,
-          subtree: true,
-          attributes: true,
-          attributeFilter: ['style', 'class']
-        });
-  
-        // Additional cleanup
-        window.onload = function() {
-          hideElements();
-        };
-      })();
-    ''';
-
-    // Update _onWebViewCreated to inject the script
-    void _onWebViewCreated(InAppWebViewController controller) {
-      _webViewController = controller;
-      WebViewUrlHandler.setWebViewController(controller);
-
-      // Add single handler for all events
-      controller.addJavaScriptHandler(
-        handlerName: 'webviewHandler',
-        callback: (args) async {
-          if (!mounted) return;
-
-          final String type = args[0];
-          switch(type) {
-            case 'cartCount':
-              setState(() {
-                _cartCount = int.tryParse(args[1]?.toString() ?? '0') ?? 0;
-              });
-              break;
-            case 'hideFloating':
-           //   await _injectHidingScript(controller);
-              break;
-          }
-          return null;
-        },
-      );
-
-      // Initial script injection
-    //  _injectHidingScript(controller);
-    }
-
-    Future<void> _injectHidingScript(InAppWebViewController controller) async {
-      await controller.evaluateJavascript(source: '''
-      function hideFloatingButton() {
-        const elements = document.querySelectorAll('.waba-floating-button, .wa-chat-box, .floating-whatsapp');
-        elements.forEach(el => el.style.display = 'none');
-      }
-      hideFloatingButton();
-      new MutationObserver(hideFloatingButton).observe(document.body, {
-        childList: true, subtree: true
-      });
-    ''');
-    }
-
-
-
-
-
-
-// Update onLoadStop for better transition
-    // Update onLoadStop to properly handle loading states
-    void _onLoadStop(InAppWebViewController controller, Uri? url) {
-      if (!mounted) return;
-
-      setState(() {
-        _isLoading = false;
-        _isNavigating = false;
-        _isInitialLoad = false;
-        _progress = 1.0;
-      });
-
-      // No delay needed here - we want to hide loading immediately
-      controller.evaluateJavascript(source: '''
-    var cartCount = document.querySelector('.cart-count-bubble')?.textContent || '0';
-    window.flutter_inappwebview.callHandler('updateCartCount', cartCount);
-  ''');
-   //   _injectHidingScript(controller);
-    }
-
-
-
-
-
     final List<AccessoryCategory> accessoryCategories = [
       AccessoryCategory(
         name: 'ساعات',
@@ -388,19 +259,69 @@
 
 
     void _onBottomNavTapped(int index) async {
-      // Prevent navigation while already navigating
-      if (_isNavigating) return;
-
+      // Always update the current index first
       setState(() {
         _currentIndex = index;
       });
 
-      if (index == 1) { // Mobiles tab
+      // For device categories (index 1) and accessories (index 5), show bottom sheets
+      if (index == 1) {
         _showDeviceCategoriesBottomSheet();
-      } else if (index == 5) { // Accessories tab
+        return;
+      } else if (index == 5) {
         _showAccessoriesBottomSheet();
-      } else {
-        await _handleNavigation(_urls[index]);
+        return;
+      }
+
+      // Force navigation to the new URL
+      final String targetUrl = _urls[index];
+      if (targetUrl.isNotEmpty) {
+        try {
+          // Stop any current loading
+          await _webViewController?.stopLoading();
+
+          // Clear current page
+          await _webViewController?.loadUrl(
+            urlRequest: URLRequest(
+              url: Uri.parse('about:blank'),
+            ),
+          );
+
+          // Force load new URL with cache headers
+          await _webViewController?.loadUrl(
+            urlRequest: URLRequest(
+              url: Uri.parse(targetUrl),
+              headers: {
+                'Cache-Control': 'no-cache, no-store, must-revalidate',
+                'Pragma': 'no-cache',
+                'Expires': '0',
+                'Accept': 'text/html,application/json',
+                'Accept-Encoding': 'gzip, deflate',
+              },
+            ),
+          );
+
+          // Update current URL
+          setState(() {
+            _currentUrl = targetUrl;
+            _isLoading = true;
+            _progress = 0;
+          });
+        } catch (e) {
+          debugPrint('Navigation error: $e');
+          setState(() {
+            _isLoading = false;
+          });
+
+          // Show error toast
+          Fluttertoast.showToast(
+            msg: "حدث خطأ في التنقل",
+            backgroundColor: Colors.red,
+            textColor: Colors.white,
+            toastLength: Toast.LENGTH_SHORT,
+            gravity: ToastGravity.BOTTOM,
+          );
+        }
       }
     }
 
@@ -523,34 +444,50 @@
     void _loadUrl(String url) async {
       if (url.isEmpty) return;
 
-      // Cancel any pending operations
-      _navigationDebouncer?.cancel();
-
-      setState(() {
-        _isLoading = true;
-        _progress = 0;
-        _isNavigating = true;
-      });
-
       try {
-        if (_webViewController != null) {
-          await _webViewController!.loadUrl(
-            urlRequest: URLRequest(
-              url: Uri.parse(url),
-              headers: {
-                'Cache-Control': 'max-age=3600',
-                'Accept': 'text/html,application/json',
-                'Accept-Encoding': 'gzip, deflate',
-              },
-            ),
-          );
-        }
+        // Stop current loading
+        await _webViewController?.stopLoading();
+
+        // Clear current page
+        await _webViewController?.loadUrl(
+          urlRequest: URLRequest(
+            url: Uri.parse('about:blank'),
+          ),
+        );
+
+        // Force load new URL with cache headers
+        await _webViewController?.loadUrl(
+          urlRequest: URLRequest(
+            url: Uri.parse(url),
+            headers: {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+              'Expires': '0',
+              'Accept': 'text/html,application/json',
+              'Accept-Encoding': 'gzip, deflate',
+            },
+          ),
+        );
+
+        setState(() {
+          _currentUrl = url;
+          _isLoading = true;
+          _progress = 0;
+        });
       } catch (e) {
-        debugPrint('Error loading URL: $e');
+        debugPrint('URL loading error: $e');
         setState(() {
           _isLoading = false;
-          _isNavigating = false;
         });
+
+        // Show error toast
+        Fluttertoast.showToast(
+          msg: "حدث خطأ في تحميل الصفحة",
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
       }
     }
 
@@ -604,50 +541,6 @@
         }, true);
       ''';
 
-
-
-
-    void _showNoConnectionScreen() {
-      _isShowingNoConnection = true;
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => NoConnectionScreen(
-            onRetry: () async {
-              ConnectivityResult result = await _connectivity.checkConnectivity();
-              if (result != ConnectivityResult.none) {
-                if (mounted) {
-                  _isShowingNoConnection = false;
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => const TrustKsaWebView(),
-                    ),
-                  );
-                }
-              } else {
-                Fluttertoast.showToast(
-                  msg: "لا يوجد اتصال بالإنترنت",
-                  backgroundColor: Colors.red,
-                  textColor: Colors.white,
-                );
-              }
-            },
-          ),
-        ),
-      );
-    }
-
-
-
-    Future<void> _initConnectivity() async {
-      ConnectivityResult result = await _connectivity.checkConnectivity();
-      _updateConnectionStatus(result);
-    }
-
-
-
-
     // Update onLoadStart for better state management
     void _onLoadStart(InAppWebViewController controller, Uri? url) {
       if (mounted) {
@@ -670,73 +563,6 @@
           _isLoading = _progress < 0.9; // Change threshold
         });
     //  }
-    }
-
-
-    // Update build method to show better loading state
-    // Future<Resource?> _resourceInterceptor(Resource resource) async {
-    //   if (!_CacheableResource.isCacheable(resource.url.toString())) {
-    //     return resource;
-    //   }
-    //
-    //   final cachedResource = await _cacheManager.getCachedResource(resource);
-    //   if (cachedResource != null) {
-    //     return cachedResource;
-    //   }
-    //
-    //   await _cacheManager.cacheResource(resource);
-    //   return resource;
-    // }
-
-    // Optimize page loading
-
-    // Progressive loading indicator
-
-    // Optimized load completion handler
-
-    // Performance optimization scripts
-    Future<void> _injectOptimizationScripts(InAppWebViewController controller) async {
-      const optimizationScript = '''
-      // Lazy load images
-      document.addEventListener('DOMContentLoaded', function() {
-        var lazyImages = [].slice.call(document.querySelectorAll('img[data-src]'));
-        
-        if ('IntersectionObserver' in window) {
-          let lazyImageObserver = new IntersectionObserver(function(entries, observer) {
-            entries.forEach(function(entry) {
-              if (entry.isIntersecting) {
-                let lazyImage = entry.target;
-                lazyImage.src = lazyImage.dataset.src;
-                lazyImage.removeAttribute('data-src');
-                lazyImageObserver.unobserve(lazyImage);
-              }
-            });
-          });
-
-          lazyImages.forEach(function(lazyImage) {
-            lazyImageObserver.observe(lazyImage);
-          });
-        }
-      });
-
-      // Defer non-critical resources
-      window.addEventListener('load', function() {
-        const deferredElements = document.querySelectorAll('[data-defer]');
-        deferredElements.forEach(element => {
-          setTimeout(() => {
-            if (element.tagName === 'SCRIPT') {
-              const script = document.createElement('script');
-              script.src = element.getAttribute('data-defer');
-              document.body.appendChild(script);
-            } else if (element.tagName === 'LINK') {
-              element.href = element.getAttribute('data-defer');
-            }
-          }, 100);
-        });
-      });
-    ''';
-
-      await controller.evaluateJavascript(source: optimizationScript);
     }
 
     @override
@@ -1059,6 +885,8 @@ Future<void> _launchUrl(String url) async {
     }
 
   }
+
+
   class NoConnectionScreen extends StatelessWidget {
     final VoidCallback onRetry;
 

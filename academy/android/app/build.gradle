@@ -46,7 +46,7 @@ android {
         applicationId "com.fayez.mobile"
         minSdkVersion 21
         targetSdkVersion 34
-        versionCode 21
+        versionCode 23
         versionName flutterVersionName
         multiDexEnabled true
     }
