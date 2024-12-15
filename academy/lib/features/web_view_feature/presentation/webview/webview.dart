@@ -29,6 +29,7 @@
 
     DeviceCategory({required this.name, required this.url, required this.icon});
   }
+
   class TrustKsaWebView extends StatefulWidget {
     const TrustKsaWebView({Key? key}) : super(key: key);
 
@@ -59,6 +60,13 @@
         name: 'سماعات وايربود',
         url: 'https://jifirephone.com/collections/%D8%A7%D9%84%D8%B3%D9%85%D8%A7%D8%B9%D8%A7%D8%AA-%D8%A8%D9%84%D9%88%D8%AA%D9%88%D8%AB-%D9%88%D8%A7%D9%84%D8%A7%D9%8A%D8%B1%D8%A8%D9%88%D8%AF',
         icon: Icons.headphones,
+      ),
+      //add item for accessories
+      //https://jifirephone.com/collections/%D8%A7%D9%83%D8%B3%D8%B3%D9%88%D8%A7%D8%B1%D8%A7%D8%AA
+      AccessoryCategory(
+        name: 'اكسسوارات',
+        url: 'https://jifirephone.com/collections/%D8%A7%D9%83%D8%B3%D8%B3%D9%88%D8%A7%D8%B1%D8%A7%D8%AA',
+        icon: Icons.add_business_outlined,
       ),
     ];
 
@@ -121,6 +129,144 @@
       );
     }
 
+    Future<void> _injectCustomCSS(InAppWebViewController controller) async {
+      const String customCSS = '''
+  /* Hide footer */
+  footer,
+  .footer,
+  .footer-wrapper,
+  [class="footer*"],
+  [class*="Footer"] {
+    display: none !important;
+  }
+  
+  /* Hide Section tabs - Comprehensive */
+  .section-tabs,
+  [class*="section_tabs_"],
+  [class*="section-tabs"],
+  .section_tabs_qdCwfH,
+  .section_tabs_FyqqtV,
+  .section_tabs_mcbiHD,
+  .tab-content,
+  .tab-panel,
+  [class*="tab-"],
+  [data-section-type*="section-tabs"],
+  [data-section-id*="section-tabs"],
+  .tabs-wrapper,
+  .tabs-container,
+  .tab-navigation,
+  .tab-header,
+  .tab-list,
+  .tab-panels,
+  [class*="tab_content"],
+  [class*="TabContent"],
+  [class*="tabpanel"],
+  .section-tab-container,
+  [class*="section-tab"],
+  [role="tablist"],
+  [role="tab"],
+  [role="tabpanel"] {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+  }
+  
+  /* Hide Stats counter */
+  .stats,
+  [class*="stats_"],
+  .stats_AhFJcf,
+  .stats-counter,
+  .stat-block,
+  [class*="stat-"] {
+    display: none !important;
+  }
+  
+  /* Hide Email signup sections */
+  .newsletter,
+  [class*="newsletter_"],
+  .email-signup,
+  .newsletter_JjUqmd,
+  .subscription-form,
+  [class*="signup-"],
+  [class*="subscribe-"] {
+    display: none !important;
+  }
+  
+  /* Hide Icons with text */
+  .icons-with-text,
+  [class*="icons_with_text_"],
+  .icons_with_text_A8P3h4,
+  .icons_with_text_74BKWK,
+  .icon-blocks,
+  [class*="icon-with-"] {
+    display: none !important;
+  }
+
+  /* Hide Ribbon banners */
+  .ribbon-banner,
+  .section-ribbon-banner,
+  [class*="ribbon_banner_"],
+  [class*="ribbon-banner"],
+  .ribbon_banner_ULeYX9,
+  .ribbon_banner_kAqDx9,
+  .ribbon_banner_JefMbE,
+  .ribbon_banner_zkP4Bb,
+  .announcement-bar,
+  [class*="banner-"],
+  [class*="ribbon-"],
+  .promotional-banner,
+  [data-section-type*="ribbon"],
+  [data-section-id*="ribbon"] {
+    display: none !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    overflow: hidden !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+
+  /* Fix layout spacing after hiding elements */
+  .main-content {
+    padding-top: 0 !important;
+  }
+
+  body {
+    padding-top: 0 !important;
+    margin-top: 0 !important;
+  }
+
+  /* Hide related spacing elements */
+  [class*="spacer_"],
+  .spacer,
+  .divider,
+  [class*="section-spacing"] {
+    display: none !important;
+  }
+
+  /* Fix any remaining spacing issues */
+  .section-content {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+
+  /* Hide any section wrappers that might contain tabs */
+  [class*="section-wrapper"],
+  [class*="section-container"] {
+    margin-top: 0 !important;
+    padding-top: 0 !important;
+  }
+''';
+
+      // Inject the CSS into the page
+      await controller.injectCSSCode(source: customCSS);
+    }
     void _showNoInternetToast() {
       Fluttertoast.showToast(
         msg: "لا يوجد اتصال بالإنترنت \n يرجى التحقق من اتصالك بالإنترنت",
@@ -607,12 +753,16 @@ Widget build(BuildContext context) {
               onLoadStart: _onLoadStart,
               onProgressChanged: _onProgressChanged,
               onLoadStop: (controller, url) async {
+
                 await controller.evaluateJavascript(source: _injectedScript);
+                await _injectCustomCSS(controller); // Add this line
+
               },
               onLoadError: _onLoadError,
               onLoadResource: (controller, resource) async {
                 final url = resource.url.toString();
                 if (_CacheableResource.isCacheable(url)) {
+                  await _injectCustomCSS(controller); // Add this line
                   try {
                     final content = await controller.evaluateJavascript(
                         source: '''
@@ -658,21 +808,51 @@ Widget build(BuildContext context) {
           ],
         ),
       ),
-      bottomNavigationBar: CurvedNavigationBar(
-        backgroundColor: Colors.white,
-        color: Colors.blue,
-        buttonBackgroundColor: Colors.blue,
-        height: 60,
-        index: _currentIndex,
-        onTap: _onBottomNavTapped,
-        items: const [
-          Icon(Icons.home, color: Colors.white),
-          Icon(Icons.phone_iphone, color: Colors.white),
-          Icon(Icons.camera_alt, color: Colors.white),
-          Icon(Icons.laptop, color: Colors.white),
-          Icon(Icons.videogame_asset, color: Colors.white),
-          Icon(Icons.headphones, color: Colors.white),
-        ],
+      bottomNavigationBar: Container(
+        decoration: BoxDecoration(
+          border: Border(
+            top: BorderSide(
+              color: Colors.grey.shade300,
+              width: 1.0,
+            ),
+          ),
+        ),
+        child: BottomNavigationBar(
+          currentIndex: _currentIndex,
+          onTap: _onBottomNavTapped,
+          type: BottomNavigationBarType.fixed,
+          backgroundColor: Colors.white,
+          selectedItemColor: Colors.blue.shade700,
+          unselectedItemColor: Colors.grey.shade600,
+          selectedFontSize: 12,
+          unselectedFontSize: 12,
+          items: const [
+            BottomNavigationBarItem(
+              icon: Icon(Icons.home),
+              label: 'Home',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.phone_iphone),
+              label: 'Phones',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.camera_alt),
+              label: 'Cameras',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.laptop),
+              label: 'Laptops',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.videogame_asset),
+              label: 'Games',
+            ),
+            BottomNavigationBarItem(
+              icon: Icon(Icons.headphones),
+              label: 'Accessories',
+            ),
+          ],
+        ),
       ),
     ),
   );
