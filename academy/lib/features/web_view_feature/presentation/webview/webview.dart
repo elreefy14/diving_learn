@@ -39,6 +39,9 @@
   class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     InAppWebViewController? _webViewController;
     bool _isLoading = true;
+    bool _isInitialLoad = true;
+    bool _isCssInjected = false;
+    bool _isContentReady = false;
     int _cartCount = 0;
     final CacheManager _cacheManager = CacheManager();
     bool _isShowingNoConnection = false;
@@ -49,6 +52,423 @@
     Timer? _navigationDebouncer;
     String _currentUrl = '';
     int _currentIndex = 0;
+
+    // Your existing URL lists and category definitions remain the same
+    final List<String> _urls = [
+      'https://jifirephone.com/',
+      '',
+      'https://jifirephone.com/collections/%D9%83%D8%A7%D9%85%D9%8A%D8%B1%D8%A7%D8%AA-%D9%85%D8%B1%D8%A7%D9%82%D8%A8%D8%A9',
+      'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%AD%D8%A7%D8%B3%D9%88%D8%A8',
+      'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%A7%D9%84%D8%B9%D8%A7%D8%A8-%D9%88%D8%AA%D8%B1%D9%81%D9%8A%D9%87',
+      '',
+    ];
+
+    // Keep your existing category lists and other properties
+
+    @override
+    void initState() {
+      super.initState();
+      _initWebView();
+      _setupConnectivity();
+    }
+
+    @override
+    void dispose() {
+      _navigationDebouncer?.cancel();
+      WebViewUrlHandler.setWebViewController(null);
+      _connectivitySubscription.cancel();
+      super.dispose();
+    }
+
+    @override
+    Widget build(BuildContext context) {
+      return WillPopScope(
+        onWillPop: () async {
+          if (await _webViewController!.canGoBack()) {
+            await _webViewController!.goBack();
+            return false;
+          }
+          return true;
+        },
+        child: Scaffold(
+          body: SafeArea(
+            child: Stack(
+              children: [
+                Opacity(
+                  opacity: _isContentReady ? 1.0 : 0.0,
+                  child: InAppWebView(
+                    initialUrlRequest: URLRequest(
+                      url: Uri.parse(_urls[0]),
+                      headers: {
+                        'Cache-Control': 'max-age=3600',
+                        'Accept': 'text/html,application/json',
+                        'Accept-Encoding': 'gzip, deflate',
+                      },
+                    ),
+                    initialOptions: _options,
+                    onWebViewCreated: (InAppWebViewController controller) async {
+                      _webViewController = controller;
+                      controller.addJavaScriptHandler(
+                        handlerName: 'handleUrl',
+                        callback: (args) async {
+                          if (args.isNotEmpty) {
+                            final url = args[0].toString();
+                            await _handleExternalUrl(url);
+                          }
+                        },
+                      );
+                    },
+                    onLoadStart: (controller, url) {
+                      setState(() {
+                        _isLoading = true;
+                        _progress = 0;
+                        _isContentReady = false;
+                        _isCssInjected = false;
+                      });
+                    },
+                    onProgressChanged: _onProgressChanged,
+                    onLoadStop: (controller, url) async {
+                      await controller.evaluateJavascript(source: _injectedScript);
+                      await _injectCustomCSS(controller);
+
+                      // Delay to ensure CSS takes effect
+                      Future.delayed(const Duration(milliseconds: 500), () {
+                        if (mounted) {
+                          setState(() {
+                            _isCssInjected = true;
+                            _isContentReady = true;
+                            _isInitialLoad = false;
+                            _isLoading = false;
+                          });
+                        }
+                      });
+                    },
+                    onLoadError: _onLoadError,
+                    onLoadResource: (controller, resource) async {
+                      final url = resource.url.toString();
+                      if (_CacheableResource.isCacheable(url)) {
+                        await _injectCustomCSS(controller);
+                        try {
+                          final content = await controller.evaluateJavascript(
+                              source: '''
+                            (function() {
+                              const element = document.querySelector('[src="${url}"]');
+                              return element ? element.outerHTML : null;
+                            })()
+                          '''
+                          );
+
+                          if (content != null) {
+                            await _cacheManager.cacheResource(url, content.toString());
+                          }
+                        } catch (e) {
+                          debugPrint('Error caching resource: $e');
+                        }
+                      }
+                    },
+                    shouldOverrideUrlLoading: (controller, navigationAction) async {
+                      final url = navigationAction.request.url?.toString() ?? '';
+                      if (_shouldHandleExternally(url)) {
+                        await _handleExternalUrl(url);
+                        return NavigationActionPolicy.CANCEL;
+                      }
+                      return NavigationActionPolicy.ALLOW;
+                    },
+                  ),
+                ),
+                if (!_isContentReady || _isLoading)
+                  Container(
+                    color: Colors.white,
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          LoadingAnimationWidget.staggeredDotsWave(
+                            color: Colors.blue,
+                            size: 50,
+                          ),
+                          const SizedBox(height: 20),
+                          if (_isInitialLoad)
+                            const Text(
+                              'جاري التحميل...',
+                              style: TextStyle(
+                                fontSize: 16,
+                                color: Colors.grey,
+                              ),
+                            ),
+                          if (_isLoading && !_isInitialLoad)
+                            LinearProgressIndicator(
+                              value: _progress,
+                              backgroundColor: Colors.grey[300],
+                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                            ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          bottomNavigationBar: Container(
+            decoration: BoxDecoration(
+              border: Border(
+                top: BorderSide(
+                  color: Colors.grey.shade300,
+                  width: 1.0,
+                ),
+              ),
+            ),
+            child: BottomNavigationBar(
+              currentIndex: _currentIndex,
+              onTap: _onBottomNavTapped,
+              type: BottomNavigationBarType.fixed,
+              backgroundColor: Colors.white,
+              selectedItemColor: Colors.blue.shade700,
+              unselectedItemColor: Colors.grey.shade600,
+              selectedFontSize: 12,
+              unselectedFontSize: 12,
+              items: const [
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.home),
+                  label: 'الرئيسية',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.phone_iphone),
+                  label: 'الهواتف',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.camera_alt),
+                  label: 'الكاميرات',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.laptop),
+                  label: 'اللابتوبات',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.videogame_asset),
+                  label: 'الألعاب',
+                ),
+                BottomNavigationBarItem(
+                  icon: Icon(Icons.headphones),
+                  label: 'الإكسسوارات',
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    // Add this method to verify CSS injection
+    Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
+      try {
+        const String customCSS = '''
+    /* Hide footer */
+    footer,
+    .footer,
+    .footer-wrapper,
+    [class="footer"],
+    [class*="Footer"] {
+      display: none !important;
+    }
+    
+    /* Hide Section tabs - Comprehensive */
+    .section-tabs,
+    [class="section*tabs_"],
+    [class*="section-tabs"],
+    .section_tabs_qdCwfH,
+    .section_tabs_FyqqtV,
+    .section_tabs_mcbiHD,
+    .tab-content,
+    .tab-panel,
+    [class*="tab-"],
+    [data-section-type*="section-tabs"],
+    [data-section-id*="section-tabs"],
+    .tabs-wrapper,
+    .tabs-container,
+    .tab-navigation,
+    .tab-header,
+    .tab-list,
+    .tab-panels,
+    [class*="tab_content"],
+    [class*="TabContent"],
+    [class*="tabpanel"],
+    .section-tab-container,
+    [class*="section-tab"],
+    [role="tablist"],
+    [role="tab"],
+    [role="tabpanel"] {
+      display: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+
+    /* Hide Collection banners and split banners */
+    .collection-banner,
+    .main-collection-banner,
+    .main-collection-split-banner,
+    [class*="collection-banner"],
+    [class*="collection_banner"],
+    [class*="collection-split"],
+    [class*="split-banner"],
+    [data-section-type="collection-banner"],
+    [data-section-type="main-collection-banner"],
+    [data-section-type="main-collection-split-banner"],
+    .collection-hero,
+    .collection-header,
+    .banner-split,
+    .collection-split-banner,
+    .split-banner-section,
+    [class*="split-collection"],
+    [class*="collection-split-banner"],
+    [class*="banner-split"],
+    .banner__box.banner-split,
+    .collection__banner.split,
+    .banner.split-style,
+    .collection-split {
+      display: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Hide Stats counter */
+    .stats,
+    [class*="stats_"],
+    .stats_AhFJcf,
+    .stats-counter,
+    .stat-block,
+    [class*="stat-"] {
+      display: none !important;
+    }
+    
+    /* Hide Email signup sections */
+    .newsletter,
+    [class*="newsletter_"],
+    .email-signup,
+    .newsletter_JjUqmd,
+    .subscription-form,
+    [class*="signup-"],
+    [class*="subscribe-"] {
+      display: none !important;
+    }
+    
+    /* Hide Icons with text */
+    .icons-with-text,
+    [class*="icons_with_text_"],
+    .icons_with_text_A8P3h4,
+    .icons_with_text_74BKWK,
+    .icon-blocks,
+    [class*="icon-with-"] {
+      display: none !important;
+    }
+
+    /* Hide Ribbon banners */
+    .ribbon-banner,
+    .section-ribbon-banner,
+    [class*="ribbon_banner_"],
+    [class*="ribbon-banner"],
+    .ribbon_banner_ULeYX9,
+    .ribbon_banner_kAqDx9,
+    .ribbon_banner_JefMbE,
+    .ribbon_banner_zkP4Bb,
+    .announcement-bar,
+    [class*="banner-"],
+    [class*="ribbon-"],
+    .promotional-banner,
+    [data-section-type*="ribbon"],
+    [data-section-id*="ribbon"] {
+      display: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
+
+    /* Fix layout spacing after hiding elements */
+    .main-content {
+      padding-top: 0 !important;
+    }
+
+    body {
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+    }
+
+    /* Hide related spacing elements */
+    [class*="spacer_"],
+    .spacer,
+    .divider,
+    [class*="section-spacing"] {
+      display: none !important;
+    }
+
+    /* Fix any remaining spacing issues */
+    .section-content {
+      margin-top: 0 !important;
+      padding-top: 0 !important;
+    }
+
+    /* Hide any section wrappers that might contain tabs or banners */
+    [class*="section-wrapper"],
+    [class*="section-container"],
+    [class*="split-wrapper"],
+    [class*="split-container"] {
+      margin-top: 0 !important;
+      padding-top: 0 !important;
+    }
+    ''';
+
+        // Inject the CSS
+        await controller.injectCSSCode(source: customCSS);
+
+        // Verify CSS injection
+        final verified = await controller.evaluateJavascript(source: '''
+      (function() {
+        const selectors = [
+          '.footer',
+          '.section-tabs',
+          '.ribbon-banner',
+          '.collection-banner',
+          '.stats',
+          '.newsletter',
+          '.icons-with-text'
+        ];
+        
+        const hiddenElements = document.querySelectorAll(selectors.join(','));
+        return hiddenElements.length > 0 && 
+               Array.from(hiddenElements).every(el => 
+                 window.getComputedStyle(el).display === 'none' ||
+                 window.getComputedStyle(el).visibility === 'hidden'
+               );
+      })()
+    ''');
+        return verified == true;
+      } catch (e) {
+        debugPrint('Error injecting CSS: $e');
+        return false;
+      }
+    }
+    void _onProgressChanged(InAppWebViewController controller, int progress) {
+      if (!mounted) return;
+
+      setState(() {
+        _progress = progress / 100;
+        _isLoading = _progress < 0.9;
+      });
+    }
     // Optimize script injection timing
     final List<AccessoryCategory> accessoryCategories = [
       AccessoryCategory(
@@ -110,6 +530,8 @@
       }
     }
 
+
+
     void _showNoInternetDialog() {
       Navigator.push(
         context,
@@ -160,14 +582,7 @@
       }
     }
     // URLs for different sections
-    final List<String> _urls = [
-      'https://jifirephone.com/',
-      '', // Mobiles (handled by category selection)
-      'https://jifirephone.com/collections/%D9%83%D8%A7%D9%85%D9%8A%D8%B1%D8%A7%D8%AA-%D9%85%D8%B1%D8%A7%D9%82%D8%A8%D8%A9',
-      'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%AD%D8%A7%D8%B3%D9%88%D8%A8',
-      'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%A7%D9%84%D8%B9%D8%A7%D8%A8-%D9%88%D8%AA%D8%B1%D9%81%D9%8A%D9%87',
-      '', // Accessories (handled by category selection)
-    ];
+
     void _showAccessoriesBottomSheet() {
       showModalBottomSheet(
         context: context,
@@ -380,12 +795,7 @@
       ),
     );
 
-    @override
-    void initState() {
-      super.initState();
-      _initWebView();
-      _setupConnectivity();
-    }
+
 
     void _showDeviceCategoriesBottomSheet() {
       showModalBottomSheet(
@@ -516,13 +926,7 @@
 
 
 
-    @override
-    void dispose() {
-      _navigationDebouncer?.cancel();
-      WebViewUrlHandler.setWebViewController(null);
-      _connectivitySubscription.cancel();
-      super.dispose();
-    }
+
 
     // Updated JavaScript code to include TikTok
     final String _injectedScript = '''
@@ -560,302 +964,9 @@
       }
     }
 
-// Update onProgressChanged for smoother loading feedback
-    void _onProgressChanged(InAppWebViewController controller, int progress) {
-      if (!mounted) return;
 
-      final newProgress = progress / 100;
-    //  if ((newProgress - _progress).abs() > 0.1) {
-        setState(() {
-          _progress = newProgress;
-          _isLoading = _progress < 0.9; // Change threshold
-        });
-    //  }
-    }
 
-    Future<void> _injectCustomCSS(InAppWebViewController controller) async {
-      const String customCSS = '''
-  /* Hide footer */
-  footer,
-  .footer,
-  .footer-wrapper,
-  [class="footer*"],
-  [class*="Footer"] {
-    display: none !important;
-  }
-  
-  /* Hide Section tabs - Comprehensive */
-  .section-tabs,
-  [class*="section_tabs_"],
-  [class*="section-tabs"],
-  .section_tabs_qdCwfH,
-  .section_tabs_FyqqtV,
-  .section_tabs_mcbiHD,
-  .tab-content,
-  .tab-panel,
-  [class*="tab-"],
-  [data-section-type*="section-tabs"],
-  [data-section-id*="section-tabs"],
-  .tabs-wrapper,
-  .tabs-container,
-  .tab-navigation,
-  .tab-header,
-  .tab-list,
-  .tab-panels,
-  [class*="tab_content"],
-  [class*="TabContent"],
-  [class*="tabpanel"],
-  .section-tab-container,
-  [class*="section-tab"],
-  [role="tablist"],
-  [role="tab"],
-  [role="tabpanel"] {
-    display: none !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-    margin: 0 !important;
-    padding: 0 !important;
-  }
-  
-  /* Hide Stats counter */
-  .stats,
-  [class*="stats_"],
-  .stats_AhFJcf,
-  .stats-counter,
-  .stat-block,
-  [class*="stat-"] {
-    display: none !important;
-  }
-  
-  /* Hide Email signup sections */
-  .newsletter,
-  [class*="newsletter_"],
-  .email-signup,
-  .newsletter_JjUqmd,
-  .subscription-form,
-  [class*="signup-"],
-  [class*="subscribe-"] {
-    display: none !important;
-  }
-  
-  /* Hide Icons with text */
-  .icons-with-text,
-  [class*="icons_with_text_"],
-  .icons_with_text_A8P3h4,
-  .icons_with_text_74BKWK,
-  .icon-blocks,
-  [class*="icon-with-"] {
-    display: none !important;
-  }
 
-  /* Hide Ribbon banners */
-  .ribbon-banner,
-  .section-ribbon-banner,
-  [class*="ribbon_banner_"],
-  [class*="ribbon-banner"],
-  .ribbon_banner_ULeYX9,
-  .ribbon_banner_kAqDx9,
-  .ribbon_banner_JefMbE,
-  .ribbon_banner_zkP4Bb,
-  .announcement-bar,
-  [class*="banner-"],
-  [class*="ribbon-"],
-  .promotional-banner,
-  [data-section-type*="ribbon"],
-  [data-section-id*="ribbon"] {
-    display: none !important;
-    height: 0 !important;
-    min-height: 0 !important;
-    overflow: hidden !important;
-    visibility: hidden !important;
-    opacity: 0 !important;
-    pointer-events: none !important;
-  }
-
-  /* Fix layout spacing after hiding elements */
-  .main-content {
-    padding-top: 0 !important;
-  }
-
-  body {
-    padding-top: 0 !important;
-    margin-top: 0 !important;
-  }
-
-  /* Hide related spacing elements */
-  [class*="spacer_"],
-  .spacer,
-  .divider,
-  [class*="section-spacing"] {
-    display: none !important;
-  }
-
-  /* Fix any remaining spacing issues */
-  .section-content {
-    margin-top: 0 !important;
-    padding-top: 0 !important;
-  }
-
-  /* Hide any section wrappers that might contain tabs */
-  [class*="section-wrapper"],
-  [class*="section-container"] {
-    margin-top: 0 !important;
-    padding-top: 0 !important;
-  }
-''';
-
-      // Inject the CSS into the page
-      await controller.injectCSSCode(source: customCSS);
-    }
-
-@override
-Widget build(BuildContext context) {
-  return WillPopScope(
-    onWillPop: () async {
-      if (await _webViewController!.canGoBack()) {
-        await _webViewController!.goBack();
-        return false;
-      }
-      return true;
-    },
-    child: Scaffold(
-      body: SafeArea(
-        child: Stack(
-          children: [
-            InAppWebView(
-              initialUrlRequest: URLRequest(
-                url: Uri.parse(_urls[0]),
-                headers: {
-                  'Cache-Control': 'max-age=3600',
-                  'Accept': 'text/html,application/json',
-                  'Accept-Encoding': 'gzip, deflate',
-                },
-              ),
-              initialOptions: _options,
-              onWebViewCreated: (InAppWebViewController controller) async {
-                _webViewController = controller;
-
-                controller.addJavaScriptHandler(
-                  handlerName: 'handleUrl',
-                  callback: (args) async {
-                    if (args.isNotEmpty) {
-                      final url = args[0].toString();
-                      await _handleExternalUrl(url);
-                    }
-                  },
-                );
-              },
-              onLoadStart: _onLoadStart,
-              onProgressChanged: _onProgressChanged,
-              onLoadStop: (controller, url) async {
-
-                await controller.evaluateJavascript(source: _injectedScript);
-                await _injectCustomCSS(controller); // Add this line
-
-              },
-              onLoadError: _onLoadError,
-              onLoadResource: (controller, resource) async {
-                final url = resource.url.toString();
-                if (_CacheableResource.isCacheable(url)) {
-                  await _injectCustomCSS(controller); // Add this line
-                  try {
-                    final content = await controller.evaluateJavascript(
-                        source: '''
-                    (function() {
-                      const element = document.querySelector('[src="${url}"]');
-                      return element ? element.outerHTML : null;
-                    })()
-                  '''
-                    );
-
-                    if (content != null) {
-                      await _cacheManager.cacheResource(url, content.toString());
-                    }
-                  } catch (e) {
-                    debugPrint('Error caching resource: $e');
-                  }
-                }
-              },
-              shouldOverrideUrlLoading: (controller, navigationAction) async {
-                final url = navigationAction.request.url?.toString() ?? '';
-
-                if (_shouldHandleExternally(url)) {
-                  await _handleExternalUrl(url);
-                  return NavigationActionPolicy.CANCEL;
-                }
-
-                return NavigationActionPolicy.ALLOW;
-              },
-            ),
-            if (_isLoading)
-              Container(
-                color: Colors.white.withOpacity(0.8),
-                child: Column(
-                  children: [
-                    LinearProgressIndicator(
-                      value: _progress,
-                      backgroundColor: Colors.grey[300],
-                      valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-                    ),
-                  ],
-                ),
-              ),
-          ],
-        ),
-      ),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          border: Border(
-            top: BorderSide(
-              color: Colors.grey.shade300,
-              width: 1.0,
-            ),
-          ),
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: _onBottomNavTapped,
-          type: BottomNavigationBarType.fixed,
-          backgroundColor: Colors.white,
-          selectedItemColor: Colors.blue.shade700,
-          unselectedItemColor: Colors.grey.shade600,
-          selectedFontSize: 12,
-          unselectedFontSize: 12,
-          items: const [
-            BottomNavigationBarItem(
-              icon: Icon(Icons.home),
-              label: 'Home',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.phone_iphone),
-              label: 'Phones',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.camera_alt),
-              label: 'Cameras',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.laptop),
-              label: 'Laptops',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.videogame_asset),
-              label: 'Games',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.headphones),
-              label: 'Accessories',
-            ),
-          ],
-        ),
-      ),
-    ),
-  );
-}
 
 
 
