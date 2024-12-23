@@ -13,7 +13,7 @@ class WebViewUrlHandler {
   }
 
   static void loadUrl(Uri uri) {
-    _webViewController?.loadUrl(urlRequest: URLRequest(url: uri));
+    _webViewController?.loadUrl(urlRequest: URLRequest(url: WebUri.uri(uri)));
   }
 
   static void evaluateJavaScrip(String  js)async {

@@ -98,7 +98,7 @@
                   opacity: _isContentReady ? 1.0 : 0.0,
                   child: InAppWebView(
                     initialUrlRequest: URLRequest(
-                      url: Uri.parse(_urls[0]),
+                      url: WebUri.uri(Uri.parse(_urls[0])),
                       headers: {
                         'Cache-Control': 'max-age=3600',
                         'Accept': 'text/html,application/json',
@@ -659,7 +659,7 @@
         // Load new URL
         await _webViewController?.loadUrl(
           urlRequest: URLRequest(
-            url: Uri.parse(newUrl),
+            url: WebUri.uri(Uri.parse(newUrl)),
             headers: {
               'Cache-Control': 'max-age=3600',
               'Accept': 'text/html,application/json',
@@ -706,14 +706,14 @@
           // Clear current page
           await _webViewController?.loadUrl(
             urlRequest: URLRequest(
-              url: Uri.parse('about:blank'),
+              url: WebUri.uri(Uri.parse('about:blank')),
             ),
           );
 
           // Force load new URL with cache headers
           await _webViewController?.loadUrl(
             urlRequest: URLRequest(
-              url: Uri.parse(targetUrl),
+              url:WebUri.uri(Uri.parse(targetUrl)) ,
               headers: {
                 'Cache-Control': 'no-cache, no-store, must-revalidate',
                 'Pragma': 'no-cache',
@@ -869,14 +869,14 @@
         // Clear current page
         await _webViewController?.loadUrl(
           urlRequest: URLRequest(
-            url: Uri.parse('about:blank'),
+            url: WebUri.uri(Uri.parse('about:blank')),
           ),
         );
 
         // Force load new URL with cache headers
         await _webViewController?.loadUrl(
           urlRequest: URLRequest(
-            url: Uri.parse(url),
+            url: WebUri.uri(Uri.parse(url)),
             headers: {
               'Cache-Control': 'no-cache, no-store, must-revalidate',
               'Pragma': 'no-cache',
