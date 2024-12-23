@@ -62,6 +62,253 @@
       'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%A7%D9%84%D8%B9%D8%A7%D8%A8-%D9%88%D8%AA%D8%B1%D9%81%D9%8A%D9%87',
       '',
     ];
+    // Add these properties to your state class
+    Timer? _loadingTimeoutTimer;
+    static const int _loadingTimeoutSeconds = 8; // Adjust this value as needed
+    // Replace the current _loadUrl method with this optimized version
+    Future<void> _loadUrl(String url) async {
+      if (url.isEmpty) return;
+
+      // Prevent multiple simultaneous loads
+      if (_isNavigating) {
+        await _webViewController?.stopLoading();
+      }
+
+      setState(() {
+        _isLoading = true;
+        _isNavigating = true;
+        _progress = 0;
+        _isContentReady = false;
+      });
+
+      try {
+        // Cancel any existing timers
+        _loadingTimeoutTimer?.cancel();
+        _navigationDebouncer?.cancel();
+
+        await _webViewController?.loadUrl(
+          urlRequest: URLRequest(
+            url: Uri.parse(url),
+            headers: {
+              'Cache-Control': 'no-cache',
+              'Accept': 'text/html,application/json',
+              'Accept-Encoding': 'gzip, deflate',
+            },
+          ),
+        );
+
+        setState(() {
+          _currentUrl = url;
+        });
+
+      } catch (e) {
+        debugPrint('URL loading error: $e');
+        if (mounted) {
+          Fluttertoast.showToast(
+            msg: "حدث خطأ في تحميل الصفحة",
+            backgroundColor: Colors.red,
+            textColor: Colors.white,
+          );
+          setState(() {
+            _isLoading = false;
+            _isNavigating = false;
+            _isContentReady = true;
+          });
+        }
+      }
+    }
+
+// Update the onBottomNavTapped method
+    void _onBottomNavTapped(int index) async {
+      if (_isNavigating || _currentIndex == index) return;
+
+      try {
+        if (index == 1) {
+          _showDeviceCategoriesBottomSheet();
+          return;
+        } else if (index == 5) {
+          _showAccessoriesBottomSheet();
+          return;
+        }
+
+        final String targetUrl = _urls[index];
+        if (targetUrl.isEmpty) return;
+
+        setState(() => _currentIndex = index);
+        await _loadUrl(targetUrl);
+
+      } catch (e) {
+        debugPrint('Navigation error: $e');
+        if (mounted) {
+          Fluttertoast.showToast(
+            msg: "حدث خطأ في التنقل",
+            backgroundColor: Colors.red,
+            textColor: Colors.white,
+          );
+        }
+      }
+    }
+
+// Update the onLoadStop method
+    // Updated onLoadStop method with CSS injection verification
+    void _onLoadStop(InAppWebViewController controller, Uri? url) async {
+      _loadingTimeoutTimer?.cancel();
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = true;
+        _isCssInjected = false;
+        _isContentReady = false;
+      });
+
+      try {
+        // Inject JavaScript first
+        await controller.evaluateJavascript(source: _injectedScript);
+
+        // Inject CSS and verify injection
+        final cssInjected = await injectCustomCSS(controller);
+
+        if (!cssInjected) {
+          // Retry CSS injection once if it fails
+          await Future.delayed(const Duration(milliseconds: 100));
+          await injectCustomCSS(controller);
+        }
+
+        // Small delay to ensure everything is rendered properly
+        await Future.delayed(const Duration(milliseconds: 150));
+
+        if (mounted) {
+          setState(() {
+            _isCssInjected = true;
+            _isContentReady = true;
+            _isInitialLoad = false;
+            _isLoading = false;
+            _isNavigating = false;
+            _progress = 1.0;
+          });
+        }
+      } catch (e) {
+        debugPrint('Error in onLoadStop: $e');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _isNavigating = false;
+            _isContentReady = true;
+            _isCssInjected = true; // Fail gracefully
+          });
+        }
+      }
+    }
+// Update the onProgressChanged method
+    void _onProgressChanged(InAppWebViewController controller, int progress) {
+      if (!mounted) return;
+
+      setState(() {
+        _progress = progress / 100;
+        _isLoading = _progress < 1.0;
+      });
+
+      // Auto-hide loading after reaching near completion
+      if (_progress >= 0.7) {
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (mounted) {
+            setState(() {
+              _isLoading = false;
+              _isContentReady = true;
+            });
+          }
+        });
+      }
+    }
+
+    // Update the onLoadStart method
+    void _onLoadStart(InAppWebViewController controller, Uri? url) {
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = true;
+        _progress = 0;
+        _isContentReady = false;
+        _isCssInjected = false;
+      });
+
+      // Cancel any existing timeout timer
+      _loadingTimeoutTimer?.cancel();
+
+      // Start new timeout timer
+      _loadingTimeoutTimer = Timer(Duration(seconds: _loadingTimeoutSeconds), () {
+        if (mounted && _isLoading) {
+          _handleLoadingTimeout(controller);
+        }
+      });
+    }
+
+    // Add this method to handle timeouts
+    void _handleLoadingTimeout(InAppWebViewController controller) async {
+      debugPrint('Page load timed out - attempting reload');
+
+      if (!mounted) return;
+
+      setState(() {
+        _isLoading = false;
+        _isContentReady = false;
+      });
+
+      // Show toast message
+      Fluttertoast.showToast(
+        msg: "تحميل بطيء - جاري إعادة المحاولة",
+        backgroundColor: Colors.orange,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_SHORT,
+      );
+
+      try {
+        // Stop current load
+        await controller.stopLoading();
+
+        // Attempt to reload the page
+        setState(() {
+          _isLoading = true;
+          _progress = 0;
+        });
+
+        // Get current URL
+        final currentUrl = await controller.getUrl();
+        if (currentUrl != null) {
+          await controller.loadUrl(
+            urlRequest: URLRequest(
+              url: currentUrl,
+              headers: {
+                'Cache-Control': 'no-cache',
+                'Accept': 'text/html,application/json',
+                'Accept-Encoding': 'gzip, deflate',
+              },
+            ),
+          );
+        }
+      } catch (e) {
+        debugPrint('Error during timeout reload: $e');
+        if (mounted) {
+          setState(() {
+            _isLoading = false;
+            _isContentReady = true;
+          });
+        }
+      }
+    }
+
+// Update the onLoadStop method to cancel the timeout timer
+
+// Don't forget to clean up the timer in dispose
+    @override
+    void dispose() {
+      _loadingTimeoutTimer?.cancel();
+      _navigationDebouncer?.cancel();
+      WebViewUrlHandler.setWebViewController(null);
+      _connectivitySubscription.cancel();
+      super.dispose();
+    }
 
     // Keep your existing category lists and other properties
 
@@ -70,14 +317,6 @@
       super.initState();
       _initWebView();
       _setupConnectivity();
-    }
-
-    @override
-    void dispose() {
-      _navigationDebouncer?.cancel();
-      WebViewUrlHandler.setWebViewController(null);
-      _connectivitySubscription.cancel();
-      super.dispose();
     }
 
     @override
@@ -94,11 +333,13 @@
           body: SafeArea(
             child: Stack(
               children: [
-                Opacity(
-                  opacity: _isContentReady ? 1.0 : 0.0,
+                // Wrap WebView in AnimatedOpacity for smooth transition
+                AnimatedOpacity(
+                  opacity: _isContentReady && _isCssInjected ? 1.0 : 0.0,
+                  duration: const Duration(milliseconds: 300),
                   child: InAppWebView(
                     initialUrlRequest: URLRequest(
-                      url: WebUri.uri(Uri.parse(_urls[0])),
+                      url: Uri.parse(_urls[0]),
                       headers: {
                         'Cache-Control': 'max-age=3600',
                         'Accept': 'text/html,application/json',
@@ -108,6 +349,9 @@
                     initialOptions: _options,
                     onWebViewCreated: (InAppWebViewController controller) async {
                       _webViewController = controller;
+                      WebViewUrlHandler.setWebViewController(controller);
+
+                      // Add JavaScript handler
                       controller.addJavaScriptHandler(
                         handlerName: 'handleUrl',
                         callback: (args) async {
@@ -118,65 +362,20 @@
                         },
                       );
                     },
-                    onLoadStart: (controller, url) {
-                      setState(() {
-                        _isLoading = true;
-                        _progress = 0;
-                        _isContentReady = false;
-                        _isCssInjected = false;
-                      });
-                    },
+                    onLoadStart: _onLoadStart,
                     onProgressChanged: _onProgressChanged,
-                    onLoadStop: (controller, url) async {
-                      await controller.evaluateJavascript(source: _injectedScript);
-                      await _injectCustomCSS(controller);
-
-                      // Delay to ensure CSS takes effect
-                      Future.delayed(const Duration(milliseconds: 500), () {
-                        if (mounted) {
-                          setState(() {
-                            _isCssInjected = true;
-                            _isContentReady = true;
-                            _isInitialLoad = false;
-                            _isLoading = false;
-                          });
-                        }
-                      });
-                    },
+                    onLoadStop: _onLoadStop,
                     onLoadError: _onLoadError,
                     onLoadResource: (controller, resource) async {
-                      final url = resource.url.toString();
-                      if (_CacheableResource.isCacheable(url)) {
-                        await _injectCustomCSS(controller);
-                        try {
-                          final content = await controller.evaluateJavascript(
-                              source: '''
-                            (function() {
-                              const element = document.querySelector('[src="${url}"]');
-                              return element ? element.outerHTML : null;
-                            })()
-                          '''
-                          );
-
-                          if (content != null) {
-                            await _cacheManager.cacheResource(url, content.toString());
-                          }
-                        } catch (e) {
-                          debugPrint('Error caching resource: $e');
-                        }
-                      }
+                      // ... keep existing onLoadResource code ...
                     },
                     shouldOverrideUrlLoading: (controller, navigationAction) async {
-                      final url = navigationAction.request.url?.toString() ?? '';
-                      if (_shouldHandleExternally(url)) {
-                        await _handleExternalUrl(url);
-                        return NavigationActionPolicy.CANCEL;
-                      }
-                      return NavigationActionPolicy.ALLOW;
+                      // ... keep existing shouldOverrideUrlLoading code ...
                     },
                   ),
                 ),
-                if (!_isContentReady || _isLoading)
+                // Updated loading overlay
+                if (!_isContentReady || !_isCssInjected || _isLoading)
                   Container(
                     color: Colors.white,
                     child: Center(
@@ -188,20 +387,15 @@
                             size: 50,
                           ),
                           const SizedBox(height: 20),
-                          if (_isInitialLoad)
-                            const Text(
-                              'جاري التحميل...',
-                              style: TextStyle(
-                                fontSize: 16,
-                                color: Colors.grey,
-                              ),
+                          Text(
+                            _isInitialLoad ? 'جاري التحميل...' : 'جاري تحميل الصفحة...',
+                            style: const TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
                             ),
+                          ),
                           if (_isLoading && !_isInitialLoad)
-                            LinearProgressIndicator(
-                              value: _progress,
-                              backgroundColor: Colors.grey[300],
-                              valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
-                            ),
+                          Container(),
                         ],
                       ),
                     ),
@@ -260,216 +454,216 @@
     }
 
     // Add this method to verify CSS injection
-    Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
+    Future<bool> injectCustomCSS(InAppWebViewController controller) async {
       try {
-        const String customCSS = '''
-    /* Hide footer */
-    footer,
-    .footer,
-    .footer-wrapper,
-    [class="footer"],
-    [class*="Footer"] {
-      display: none !important;
-    }
-    
-    /* Hide Section tabs - Comprehensive */
-    .section-tabs,
-    [class="section*tabs_"],
-    [class*="section-tabs"],
-    .section_tabs_qdCwfH,
-    .section_tabs_FyqqtV,
-    .section_tabs_mcbiHD,
-    .tab-content,
-    .tab-panel,
-    [class*="tab-"],
-    [data-section-type*="section-tabs"],
-    [data-section-id*="section-tabs"],
-    .tabs-wrapper,
-    .tabs-container,
-    .tab-navigation,
-    .tab-header,
-    .tab-list,
-    .tab-panels,
-    [class*="tab_content"],
-    [class*="TabContent"],
-    [class*="tabpanel"],
-    .section-tab-container,
-    [class*="section-tab"],
-    [role="tablist"],
-    [role="tab"],
-    [role="tabpanel"] {
-      display: none !important;
-      height: 0 !important;
-      min-height: 0 !important;
-      overflow: hidden !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    }
+        // Get current URL to check if we're on homepage
+        final currentUrl = (await controller.getUrl())?.toString() ?? '';
+        final isHomePage = currentUrl == 'https://jifirephone.com/' ||
+            currentUrl == 'https://jifirephone.com';
 
-    /* Hide Collection banners and split banners */
-    .collection-banner,
-    .main-collection-banner,
-    .main-collection-split-banner,
-    [class*="collection-banner"],
-    [class*="collection_banner"],
-    [class*="collection-split"],
-    [class*="split-banner"],
-    [data-section-type="collection-banner"],
-    [data-section-type="main-collection-banner"],
-    [data-section-type="main-collection-split-banner"],
-    .collection-hero,
-    .collection-header,
-    .banner-split,
-    .collection-split-banner,
-    .split-banner-section,
-    [class*="split-collection"],
-    [class*="collection-split-banner"],
-    [class*="banner-split"],
-    .banner__box.banner-split,
-    .collection__banner.split,
-    .banner.split-style,
-    .collection-split {
-      display: none !important;
-      height: 0 !important;
-      min-height: 0 !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-      margin: 0 !important;
-      padding: 0 !important;
-    }
-    
-    /* Hide Stats counter */
-    .stats,
-    [class*="stats_"],
-    .stats_AhFJcf,
-    .stats-counter,
-    .stat-block,
-    [class*="stat-"] {
-      display: none !important;
-    }
-    
-    /* Hide Email signup sections */
-    .newsletter,
-    [class*="newsletter_"],
-    .email-signup,
-    .newsletter_JjUqmd,
-    .subscription-form,
-    [class*="signup-"],
-    [class*="subscribe-"] {
-      display: none !important;
-    }
-    
-    /* Hide Icons with text */
-    .icons-with-text,
-    [class*="icons_with_text_"],
-    .icons_with_text_A8P3h4,
-    .icons_with_text_74BKWK,
-    .icon-blocks,
-    [class*="icon-with-"] {
-      display: none !important;
-    }
+        // Define CSS sections separately for better maintainability
+        final String hideCollectionBannerCSS = isHomePage ? '' : '''
+/* Hide Collection banner elements */
+.collection-banner,
+.collection-hero,
+[class*="collection-banner"],
+[class*="collection-hero"],
+[class*="collection_banner"],
+[class*="collection_hero"],
+.collection-header,
+[class*="collection-header"],
+[data-section-type*="collection-banner"],
+[data-section-id*="collection-banner"],
+.collection-description,
+.collection-intro,
+[class*="collection-intro"],
+.collection-title-banner,
+.collection-banner-image,
+.collection-banner-content {
+  display: none !important;
+}
+''';
 
-    /* Hide Ribbon banners */
-    .ribbon-banner,
-    .section-ribbon-banner,
-    [class*="ribbon_banner_"],
-    [class*="ribbon-banner"],
-    .ribbon_banner_ULeYX9,
-    .ribbon_banner_kAqDx9,
-    .ribbon_banner_JefMbE,
-    .ribbon_banner_zkP4Bb,
-    .announcement-bar,
-    [class*="banner-"],
-    [class*="ribbon-"],
-    .promotional-banner,
-    [data-section-type*="ribbon"],
-    [data-section-id*="ribbon"] {
-      display: none !important;
-      height: 0 !important;
-      min-height: 0 !important;
-      overflow: hidden !important;
-      visibility: hidden !important;
-      opacity: 0 !important;
-      pointer-events: none !important;
-    }
+        const String hideFooterCSS = '''
+/* Hide footer elements */
+footer,
+.footer,
+.footer-wrapper,
+[class="footer"],
+[class="Footer"] {
+  display: none !important;
+}
+''';
 
-    /* Fix layout spacing after hiding elements */
-    .main-content {
-      padding-top: 0 !important;
-    }
+        const String hideSectionTabsCSS = '''
+/* Hide Section tabs */
+.section-tabs,
+[class*="sectiontabs"],
+[class*="section-tabs"],
+.section_tabs_qdCwfH,
+.section_tabs_FyqqtV,
+.section_tabs_mcbiHD,
+.tab-content,
+.tab-panel,
+[class*="tab-"],
+[data-section-type*="section-tabs"],
+[data-section-id*="section-tabs"],
+.tabs-wrapper,
+.tabs-container,
+.tab-navigation,
+.tab-header,
+.tab-list,
+.tab-panels,
+[class*="tab_content"],
+[class*="TabContent"],
+[class*="tabpanel"],
+.section-tab-container,
+[class*="section-tab"],
+[role="tablist"],
+[role="tab"],
+[role="tabpanel"] {
+  display: none !important;
+}
+''';
 
-    body {
-      padding-top: 0 !important;
-      margin-top: 0 !important;
-    }
+        const String hideStatsCSS = '''
+/* Hide Stats elements */
+.stats,
+[class*="stats_"],
+.stats_AhFJcf,
+.stats-counter,
+.stat-block,
+[class*="stat-"] {
+  display: none !important;
+}
+''';
 
-    /* Hide related spacing elements */
-    [class*="spacer_"],
-    .spacer,
-    .divider,
-    [class*="section-spacing"] {
-      display: none !important;
-    }
+        const String hideEmailSignupCSS = '''
+/* Hide Email signup sections */
+.newsletter,
+[class*="newsletter_"],
+.email-signup,
+.newsletter_JjUqmd,
+.subscription-form,
+[class*="signup-"],
+[class*="subscribe-"] {
+  display: none !important;
+}
+''';
 
-    /* Fix any remaining spacing issues */
-    .section-content {
-      margin-top: 0 !important;
-      padding-top: 0 !important;
-    }
+        const String hideIconsWithTextCSS = '''
+/* Hide Icons with text */
+.icons-with-text,
+[class*="icons_with_text_"],
+.icons_with_text_A8P3h4,
+.icons_with_text_74BKWK,
+.icon-blocks,
+[class*="icon-with-"] {
+  display: none !important;
+}
+''';
 
-    /* Hide any section wrappers that might contain tabs or banners */
-    [class*="section-wrapper"],
-    [class*="section-container"],
-    [class*="split-wrapper"],
-    [class*="split-container"] {
-      margin-top: 0 !important;
-      padding-top: 0 !important;
-    }
-    ''';
+        const String hideRibbonBannersCSS = '''
+/* Hide Ribbon banners */
+.ribbon-banner,
+.section-ribbon-banner,
+[class*="ribbon_banner_"],
+[class*="ribbon-banner"],
+.ribbon_banner_ULeYX9,
+.ribbon_banner_kAqDx9,
+.ribbon_banner_JefMbE,
+.ribbon_banner_zkP4Bb,
+.announcement-bar,
+[class*="ribbon-"],
+.promotional-banner,
+[data-section-type*="ribbon"],
+[data-section-id*="ribbon"] {
+  display: none !important;
+}
+''';
 
-        // Inject the CSS
-        await controller.injectCSSCode(source: customCSS);
+        const String layoutFixesCSS = '''
+/* Fix layout spacing */
+.main-content {
+  padding-top: 0 !important;
+}
+
+body {
+  padding-top: 0 !important;
+  margin-top: 0 !important;
+}
+''';
+
+        // Combine all CSS sections
+        final String completeCSS = '''
+$hideCollectionBannerCSS
+$hideFooterCSS
+$hideSectionTabsCSS
+$hideStatsCSS
+$hideEmailSignupCSS
+$hideIconsWithTextCSS
+$hideRibbonBannersCSS
+$layoutFixesCSS
+''';
+
+        // Inject the combined CSS
+        await controller.injectCSSCode(source: completeCSS);
+
+        // Create a comprehensive list of selectors to verify
+        final selectors = [
+          // Only check collection banner selectors if not on homepage
+          if (!isHomePage) ...[
+            '.collection-banner',
+            '.collection-hero',
+            '.collection-header',
+            '.collection-description',
+          ],
+          // Footer selectors
+          'footer',
+          '.footer',
+          '.footer-wrapper',
+          // Section tabs selectors
+          '.section-tabs',
+          '.tab-content',
+          '.tab-panel',
+          // Stats selectors
+          '.stats',
+          '.stats-counter',
+          // Email signup selectors
+          '.newsletter',
+          '.email-signup',
+          // Icons with text selectors
+          '.icons-with-text',
+          '.icon-blocks',
+          // Ribbon banner selectors
+          '.ribbon-banner',
+          '.announcement-bar'
+        ];
 
         // Verify CSS injection
         final verified = await controller.evaluateJavascript(source: '''
-      (function() {
-        const selectors = [
-          '.footer',
-          '.section-tabs',
-          '.ribbon-banner',
-          '.collection-banner',
-          '.stats',
-          '.newsletter',
-          '.icons-with-text'
-        ];
-        
-        const hiddenElements = document.querySelectorAll(selectors.join(','));
-        return hiddenElements.length > 0 && 
-               Array.from(hiddenElements).every(el => 
-                 window.getComputedStyle(el).display === 'none' ||
-                 window.getComputedStyle(el).visibility === 'hidden'
-               );
-      })()
+    (function() {
+      const selectors = ${selectors.map((s) => "'$s'").toList()};
+      const elements = document.querySelectorAll(selectors.join(','));
+      
+      // Check if elements are actually hidden
+      for (const element of elements) {
+        const style = window.getComputedStyle(element);
+        if (style.display !== 'none') {
+          return false;
+        }
+      }
+      
+      return true;
+    })()
     ''');
+
         return verified == true;
       } catch (e) {
         debugPrint('Error injecting CSS: $e');
         return false;
       }
     }
-    void _onProgressChanged(InAppWebViewController controller, int progress) {
-      if (!mounted) return;
-
-      setState(() {
-        _progress = progress / 100;
-        _isLoading = _progress < 0.9;
-      });
-    }
-    // Optimize script injection timing
     final List<AccessoryCategory> accessoryCategories = [
       AccessoryCategory(
         name: 'ساعات',
@@ -583,63 +777,6 @@
     }
     // URLs for different sections
 
-    void _showAccessoriesBottomSheet() {
-      showModalBottomSheet(
-        context: context,
-        backgroundColor: Colors.white,
-        shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        builder: (context) => Container(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 20),
-                child: Text(
-                  'اختر نوع الاكسسوار',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: accessoryCategories.map((category) {
-                  return InkWell(
-                    onTap: () {
-                      Navigator.pop(context);
-                      _loadUrl(category.url);
-                    },
-                    child: Container(
-                      width: MediaQuery.of(context).size.width / 3 - 30,
-                      padding: const EdgeInsets.all(8),
-                      child: Column(
-                        children: [
-                          Icon(
-                            category.icon,
-                            size: 32,
-                            color: Colors.blue,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            category.name,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                }).toList(),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
      _handleNavigation(String newUrl) async {
       if (newUrl.isEmpty || newUrl == _currentUrl) return;
 
@@ -659,7 +796,7 @@
         // Load new URL
         await _webViewController?.loadUrl(
           urlRequest: URLRequest(
-            url: WebUri.uri(Uri.parse(newUrl)),
+            url: Uri.parse(newUrl),
             headers: {
               'Cache-Control': 'max-age=3600',
               'Accept': 'text/html,application/json',
@@ -681,73 +818,43 @@
 // Update bottom navigation handler
 
 
-    void _onBottomNavTapped(int index) async {
-      // Always update the current index first
-      setState(() {
-        _currentIndex = index;
-      });
 
-      // For device categories (index 1) and accessories (index 5), show bottom sheets
-      if (index == 1) {
-        _showDeviceCategoriesBottomSheet();
-        return;
-      } else if (index == 5) {
-        _showAccessoriesBottomSheet();
-        return;
-      }
-
-      // Force navigation to the new URL
-      final String targetUrl = _urls[index];
-      if (targetUrl.isNotEmpty) {
-        try {
-          // Stop any current loading
-          await _webViewController?.stopLoading();
-
-          // Clear current page
-          await _webViewController?.loadUrl(
-            urlRequest: URLRequest(
-              url: WebUri.uri(Uri.parse('about:blank')),
-            ),
-          );
-
-          // Force load new URL with cache headers
-          await _webViewController?.loadUrl(
-            urlRequest: URLRequest(
-              url:WebUri.uri(Uri.parse(targetUrl)) ,
-              headers: {
-                'Cache-Control': 'no-cache, no-store, must-revalidate',
-                'Pragma': 'no-cache',
-                'Expires': '0',
-                'Accept': 'text/html,application/json',
-                'Accept-Encoding': 'gzip, deflate',
-              },
-            ),
-          );
-
-          // Update current URL
-          setState(() {
-            _currentUrl = targetUrl;
-            _isLoading = true;
-            _progress = 0;
-          });
-        } catch (e) {
-          debugPrint('Navigation error: $e');
-          setState(() {
-            _isLoading = false;
-          });
-
-          // Show error toast
-          Fluttertoast.showToast(
-            msg: "حدث خطأ في التنقل",
-            backgroundColor: Colors.red,
-            textColor: Colors.white,
-            toastLength: Toast.LENGTH_SHORT,
-            gravity: ToastGravity.BOTTOM,
-          );
-        }
+    void _updateWebViewOptions() {
+      if (_webViewController != null) {
+        _webViewController!.setOptions(options: InAppWebViewGroupOptions(
+          crossPlatform: InAppWebViewOptions(
+            useShouldOverrideUrlLoading: true,
+            mediaPlaybackRequiresUserGesture: false,
+            cacheEnabled: true,
+            clearCache: false,
+            preferredContentMode: UserPreferredContentMode.MOBILE,
+            javaScriptEnabled: true,
+            transparentBackground: true,
+            resourceCustomSchemes: ['tel', 'mailto'],
+            minimumFontSize: 10,
+            useOnLoadResource: true,
+            incognito: false,
+            supportZoom: false,
+            applicationNameForUserAgent: 'MobileApp',
+          ),
+          android: AndroidInAppWebViewOptions(
+            useHybridComposition: true,
+            mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+            safeBrowsingEnabled: false,
+            cacheMode: AndroidCacheMode.LOAD_DEFAULT,
+            domStorageEnabled: true,
+            loadWithOverviewMode: true,
+            useWideViewPort: true,
+            hardwareAcceleration: true,
+          ),
+          ios: IOSInAppWebViewOptions(
+            allowsInlineMediaPlayback: true,
+            allowsBackForwardNavigationGestures: true,
+            enableViewportScale: false,
+          ),
+        ));
       }
     }
-
 
     late final InAppWebViewGroupOptions _options = InAppWebViewGroupOptions(
       crossPlatform: InAppWebViewOptions(
@@ -756,158 +863,199 @@
         cacheEnabled: true,
         clearCache: false,
         preferredContentMode: UserPreferredContentMode.MOBILE,
-        //allowsInlineMediaPlayback: true,
         javaScriptEnabled: true,
         transparentBackground: true,
-        // Resource optimization
         resourceCustomSchemes: ['tel', 'mailto'],
         minimumFontSize: 10,
         useOnLoadResource: true,
-        // Reduce memory usage
         incognito: false,
         supportZoom: false,
+        userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1',
       ),
       android: AndroidInAppWebViewOptions(
         useHybridComposition: true,
         mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
         safeBrowsingEnabled: false,
-        // Cache optimization
-        cacheMode: AndroidCacheMode.LOAD_CACHE_ELSE_NETWORK,
+        cacheMode: AndroidCacheMode.LOAD_DEFAULT,
         allowContentAccess: true,
         allowFileAccess: true,
-        // Database optimization
         databaseEnabled: true,
         domStorageEnabled: true,
-        // Layout optimization
         loadWithOverviewMode: true,
         useWideViewPort: true,
-        // Performance optimization
         hardwareAcceleration: true,
+        builtInZoomControls: false,
       ),
       ios: IOSInAppWebViewOptions(
         allowsInlineMediaPlayback: true,
         allowsBackForwardNavigationGestures: true,
-        // Cache optimization
         enableViewportScale: false,
-        // Performance optimization
         isFraudulentWebsiteWarningEnabled: false,
-        //isPrefetchingEnabled: true,
       ),
     );
 
+    void _showAccessoriesBottomSheet() {
+      final isTablet = MediaQuery.of(context).size.width >= 768;
+      final screenHeight = MediaQuery.of(context).size.height;
+      final screenWidth = MediaQuery.of(context).size.width;
 
-
-    void _showDeviceCategoriesBottomSheet() {
       showModalBottomSheet(
         context: context,
         backgroundColor: Colors.white,
+        constraints: BoxConstraints(
+          maxHeight: screenHeight * 0.8,
+          maxWidth: isTablet ? screenWidth * 0.8 : screenWidth,
+        ),
         shape: const RoundedRectangleBorder(
           borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
         ),
-        builder: (context) => Container(
-          padding: const EdgeInsets.symmetric(vertical: 20),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Padding(
-                padding: EdgeInsets.only(bottom: 20),
-                child: Text(
-                  'اختر نوع الجهاز',
-                  style: TextStyle(
-                    fontSize: 20,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
+        builder: (context) => Center(
+          child: SingleChildScrollView(
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                vertical: 20,
+                horizontal: isTablet ? 40 : 20,
               ),
-              Wrap(
-                alignment: WrapAlignment.center,
-                spacing: 20,
-                runSpacing: 20,
-                children: deviceCategories.map((category) {
-                  return InkWell(
-                    onTap: () {
-                      Navigator.pop(context);
-                      _loadUrl(category.url);
-                    },
-                    child: Container(
-                      width: MediaQuery.of(context).size.width / 3 - 30,
-                      padding: const EdgeInsets.all(8),
-                      child: Column(
-                        children: [
-                          Icon(
-                            category.icon,
-                            size: 32,
-                            color: Colors.blue,
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            category.name,
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(fontSize: 14),
-                          ),
-                        ],
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 20),
+                    child: Text(
+                      'اختر نوع الاكسسوار',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
                       ),
                     ),
-                  );
-                }).toList(),
+                  ),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 20,
+                    runSpacing: 20,
+                    children: accessoryCategories.map((category) {
+                      final itemWidth = isTablet
+                          ? screenWidth * 0.2
+                          : (screenWidth / 3) - 30;
+
+                      return InkWell(
+                        onTap: () {
+                          Navigator.pop(context);
+                          _loadUrl(category.url);
+                        },
+                        child: Container(
+                          width: itemWidth,
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            children: [
+                              Icon(
+                                category.icon,
+                                size: isTablet ? 48 : 32,
+                                color: Colors.blue,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                category.name,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: isTablet ? 16 : 14
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
               ),
-            ],
+            ),
           ),
         ),
       );
     }
 
+    void _showDeviceCategoriesBottomSheet() {
+      final isTablet = MediaQuery.of(context).size.width >= 768;
+      final screenHeight = MediaQuery.of(context).size.height;
+      final screenWidth = MediaQuery.of(context).size.width;
 
-// Optimize page loading
-    void _loadUrl(String url) async {
-      if (url.isEmpty) return;
+      showModalBottomSheet(
+        context: context,
+        backgroundColor: Colors.white,
+        constraints: BoxConstraints(
+          maxHeight: screenHeight * 0.8,
+          maxWidth: isTablet ? screenWidth * 0.8 : screenWidth,
+        ),
+        shape: const RoundedRectangleBorder(
+          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+        ),
+        builder: (context) => Center(
+          child: SingleChildScrollView(
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                vertical: 20,
+                horizontal: isTablet ? 40 : 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.only(bottom: 20),
+                    child: Text(
+                      'اختر نوع الجهاز',
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  Wrap(
+                    alignment: WrapAlignment.center,
+                    spacing: 20,
+                    runSpacing: 20,
+                    children: deviceCategories.map((category) {
+                      final itemWidth = isTablet
+                          ? screenWidth * 0.2
+                          : (screenWidth / 3) - 30;
 
-      try {
-        // Stop current loading
-        await _webViewController?.stopLoading();
-
-        // Clear current page
-        await _webViewController?.loadUrl(
-          urlRequest: URLRequest(
-            url: WebUri.uri(Uri.parse('about:blank')),
+                      return InkWell(
+                        onTap: () {
+                          Navigator.pop(context);
+                          _loadUrl(category.url);
+                        },
+                        child: Container(
+                          width: itemWidth,
+                          padding: const EdgeInsets.all(8),
+                          child: Column(
+                            children: [
+                              Icon(
+                                category.icon,
+                                size: isTablet ? 48 : 32,
+                                color: Colors.blue,
+                              ),
+                              const SizedBox(height: 8),
+                              Text(
+                                category.name,
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: isTablet ? 16 : 14
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ],
+              ),
+            ),
           ),
-        );
-
-        // Force load new URL with cache headers
-        await _webViewController?.loadUrl(
-          urlRequest: URLRequest(
-            url: WebUri.uri(Uri.parse(url)),
-            headers: {
-              'Cache-Control': 'no-cache, no-store, must-revalidate',
-              'Pragma': 'no-cache',
-              'Expires': '0',
-              'Accept': 'text/html,application/json',
-              'Accept-Encoding': 'gzip, deflate',
-            },
-          ),
-        );
-
-        setState(() {
-          _currentUrl = url;
-          _isLoading = true;
-          _progress = 0;
-        });
-      } catch (e) {
-        debugPrint('URL loading error: $e');
-        setState(() {
-          _isLoading = false;
-        });
-
-        // Show error toast
-        Fluttertoast.showToast(
-          msg: "حدث خطأ في تحميل الصفحة",
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-          toastLength: Toast.LENGTH_SHORT,
-          gravity: ToastGravity.BOTTOM,
-        );
-      }
+        ),
+      );
     }
+
 
 
 
@@ -953,16 +1101,7 @@
         }, true);
       ''';
 
-    // Update onLoadStart for better state management
-    void _onLoadStart(InAppWebViewController controller, Uri? url) {
-      if (mounted) {
-        setState(() {
-          _isLoading = true;
-          _progress = 0;
-        });
-      //  _injectRemovalScript(controller);
-      }
-    }
+
 
 
 
