@@ -88,7 +88,7 @@
 
         await _webViewController?.loadUrl(
           urlRequest: URLRequest(
-            url: Uri.parse(url),
+            url: WebUri.uri(Uri.parse(url)),
             headers: {
               'Cache-Control': 'no-cache',
               'Accept': 'text/html,application/json',
@@ -339,7 +339,7 @@
                   duration: const Duration(milliseconds: 300),
                   child: InAppWebView(
                     initialUrlRequest: URLRequest(
-                      url: Uri.parse(_urls[0]),
+                      url: WebUri.uri(Uri.parse(_urls[0])),
                       headers: {
                         'Cache-Control': 'max-age=3600',
                         'Accept': 'text/html,application/json',
@@ -796,7 +796,7 @@ $layoutFixesCSS
         // Load new URL
         await _webViewController?.loadUrl(
           urlRequest: URLRequest(
-            url: Uri.parse(newUrl),
+            url: WebUri.uri(Uri.parse(newUrl)),
             headers: {
               'Cache-Control': 'max-age=3600',
               'Accept': 'text/html,application/json',
