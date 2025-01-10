@@ -1,11 +1,13 @@
 // First, create a new file onboarding_screen.dart:
 
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import 'app/utils/get_it_injection.dart';
 import 'features/web_view_feature/presentation/webview/webview.dart';
+import 'firebase_options.dart';
 
 class OnboardingScreen extends StatefulWidget {
   const OnboardingScreen({Key? key}) : super(key: key);
@@ -208,6 +210,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await init();
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
 
   final prefs = await SharedPreferences.getInstance();
   final showOnboarding = prefs.getBool('onboarding_complete')??true;
