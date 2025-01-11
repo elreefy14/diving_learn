@@ -1,17 +1,11 @@
 import 'dart:async';
-import 'dart:collection';
-import 'dart:io';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
-import 'package:flutter/services.dart';
-import 'package:http/http.dart' as http;
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:curved_navigation_bar/curved_navigation_bar.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
-import 'package:path_provider/path_provider.dart';
-import 'package:shared_preferences/shared_preferences.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
@@ -44,7 +38,6 @@ class TrustKsaWebView extends StatefulWidget {
   _TrustKsaWebViewState createState() => _TrustKsaWebViewState();
 }
 class _TrustKsaWebViewState extends State<TrustKsaWebView> {
-
   InAppWebViewController? _webViewController;
   bool _isLoading = true;
   bool _isInitialLoad = true;
@@ -60,63 +53,78 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
   Timer? _navigationDebouncer;
   String _currentUrl = '';
   int _currentIndex = 0;
-  late Directory _cacheDirectory;
-  bool _isOfflineModeAvailable = false;
-  String? _cachedHomePage;
-  final String _homeUrl = 'https://jifirephone.com/';
-  final Map<String, String> _preloadedContent = {};
-  bool _isPreloading = false;
-  final http.Client _client = http.Client();
-  bool _isInitialLoadComplete = false;
-  final PreloadManager _preloadManager = PreloadManager();
-  // Add Firebase Remote Config instance
-  late FirebaseRemoteConfig _remoteConfig;
-  bool _showPhonesTab = true; // Default value
+  bool _showPhonesTab = false;
+
+  final FirebaseRemoteConfig _remoteConfig = FirebaseRemoteConfig.instance;
+  Timer? _configRefreshTimer;
 
   @override
   void initState() {
     super.initState();
     _initRemoteConfig();
-    _initializeCacheDirectory();
-    _loadCachedContent();
     _initWebView();
     _setupConnectivity();
-    _preloadCriticalResources();
-    _preloadManager.preloadAll();
+
+    // Set up periodic remote config refresh
+    _configRefreshTimer = Timer.periodic(const Duration(hours: 1), (_) {
+      _refreshRemoteConfig();
+    });
   }
 
-  // Initialize Remote Config
+  @override
+  void dispose() {
+    _navigationDebouncer?.cancel();
+    _configRefreshTimer?.cancel();
+    WebViewUrlHandler.setWebViewController(null);
+    _connectivitySubscription.cancel();
+    super.dispose();
+  }
+
   Future<void> _initRemoteConfig() async {
-    _remoteConfig = FirebaseRemoteConfig.instance;
-    await _remoteConfig.setConfigSettings(RemoteConfigSettings(
-      fetchTimeout: const Duration(minutes: 1),
-      minimumFetchInterval: const Duration(hours: 1),
-    ));
+    try {
+      await _remoteConfig.setConfigSettings(RemoteConfigSettings(
+        fetchTimeout: const Duration(minutes: 1),
+        minimumFetchInterval: const Duration(hours: 1),
+      ));
 
-    // Set default values
-    await _remoteConfig.setDefaults({
-      'release': true, // Default to showing the phones tab
-    });
+      await _remoteConfig.fetchAndActivate();
 
-    // Fetch and activate remote config
-    await _remoteConfig.fetchAndActivate();
-
-    // Update state based on remote config value
-    setState(() {
-      _showPhonesTab = _remoteConfig.getBool('release');
-    });
-
-    // Listen for remote config updates
-    _remoteConfig.onConfigUpdated.listen((event) async {
-      await _remoteConfig.activate();
       setState(() {
         _showPhonesTab = _remoteConfig.getBool('release');
       });
-    });
+    } catch (e) {
+      debugPrint('Error initializing remote config: $e');
+      // Default to showing the phones tab if there's an error
+      setState(() {
+        _showPhonesTab = true;
+      });
+    }
   }
 
-  // Modified bottom navigation bar builder
-  Widget _buildBottomNavigationBar() {
+  Future<void> _refreshRemoteConfig() async {
+    try {
+      bool updated = await _remoteConfig.fetchAndActivate();
+      if (updated) {
+        setState(() {
+          _showPhonesTab = _remoteConfig.getBool('release');
+        });
+      }
+    } catch (e) {
+      debugPrint('Error refreshing remote config: $e');
+    }
+  }
+
+  final List<String> _urls = [
+    'https://jifirephone.com/',
+    '',
+    'https://jifirephone.com/collections/%D9%83%D8%A7%D9%85%D9%8A%D8%B1%D8%A7%D8%AA-%D9%85%D8%B1%D8%A7%D9%82%D8%A8%D8%A9',
+    'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%AD%D8%A7%D8%B3%D9%88%D8%A8',
+    'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%A7%D9%84%D8%B9%D8%A7%D8%A8-%D9%88%D8%AA%D8%B1%D9%81%D9%8A%D9%87',
+    '',
+  ];
+
+
+  List<BottomNavigationBarItem> get _navigationItems {
     List<BottomNavigationBarItem> items = [
       const BottomNavigationBarItem(
         icon: Icon(Icons.home),
@@ -124,7 +132,6 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       ),
     ];
 
-    // Only add phones tab if release is true
     if (_showPhonesTab) {
       items.add(const BottomNavigationBarItem(
         icon: Icon(Icons.phone_iphone),
@@ -132,7 +139,6 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       ));
     }
 
-    // Add remaining items
     items.addAll([
       const BottomNavigationBarItem(
         icon: Icon(Icons.camera_alt),
@@ -152,492 +158,16 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       ),
     ]);
 
-    return Container(
-      decoration: BoxDecoration(
-        border: Border(
-          top: BorderSide(
-            color: Colors.grey.shade300,
-            width: 1.0,
-          ),
-        ),
-      ),
-      child: BottomNavigationBar(
-        currentIndex: _getCurrentIndex(),
-        onTap: _onBottomNavTapped,
-        type: BottomNavigationBarType.fixed,
-        backgroundColor: Colors.white,
-        selectedItemColor: Colors.blue.shade700,
-        unselectedItemColor: Colors.grey.shade600,
-        selectedFontSize: 12,
-        unselectedFontSize: 12,
-        items: items,
-      ),
-    );
+    return items;
   }
-
-  // Helper method to get current index considering hidden tab
-  int _getCurrentIndex() {
-    if (!_showPhonesTab && _currentIndex > 0) {
-      return _currentIndex - 1;
-    }
-    return _currentIndex;
-  }
-
-  // Modified navigation handler
-  void _onBottomNavTapped(int index) async {
-    if (_isNavigating || _getCurrentIndex() == index) return;
-
-    try {
-      // Adjust index if phones tab is hidden
-      int actualIndex = _showPhonesTab ? index : (index >= 1 ? index + 1 : index);
-
-      if (actualIndex == 1 && _showPhonesTab) {
-        _showDeviceCategoriesBottomSheet();
-        return;
-      } else if (actualIndex == 5) {
-        _showAccessoriesBottomSheet();
-        return;
-      }
-
-      final String targetUrl = _urls[actualIndex];
-      if (targetUrl.isEmpty) return;
-
-      setState(() => _currentIndex = actualIndex);
-      await _loadUrl(targetUrl);
-
-    } catch (e) {
-      debugPrint('Navigation error: $e');
-      if (mounted) {
-        Fluttertoast.showToast(
-          msg: "حدث خطأ في التنقل",
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-        );
-      }
-    }
-  }
-
 
   // Your existing URL lists and category definitions remain the same
-  final List<String> _urls = [
-    'https://jifirephone.com/',
-    '',
-    'https://jifirephone.com/collections/%D9%83%D8%A7%D9%85%D9%8A%D8%B1%D8%A7%D8%AA-%D9%85%D8%B1%D8%A7%D9%82%D8%A8%D8%A9',
-    'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%AD%D8%A7%D8%B3%D9%88%D8%A8',
-    'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%A7%D9%84%D8%B9%D8%A7%D8%A8-%D9%88%D8%AA%D8%B1%D9%81%D9%8A%D9%87',
-    '',
-  ];
-  // In your WebView state class:
-  void _implementAdditionalOptimizations() {
-    // 1. DNS Prefetching
-    final commonDomains = [
-      'jifirephone.com',
-      'cdn.jifirephone.com'
-    ];
 
-    _webViewController?.evaluateJavascript(source: '''
-    ${commonDomains.map((domain) =>
-    "var link = document.createElement('link');" +
-        "link.rel = 'dns-prefetch';" +
-        "link.href = 'https://$domain';" +
-        "document.head.appendChild(link);"
-    ).join('')}
-  ''');
-
-    // 2. Enable gzip compression in headers
-    final headers = {
-      'Accept-Encoding': 'gzip, deflate',
-      'Cache-Control': 'no-transform',
-    };
-
-    // 3. Implement progressive loading
-    _webViewController?.evaluateJavascript(source: '''
-    document.addEventListener('DOMContentLoaded', function() {
-      const observer = new IntersectionObserver((entries) => {
-        entries.forEach(entry => {
-          if (entry.isIntersecting) {
-            entry.target.src = entry.target.dataset.src;
-            observer.unobserve(entry.target);
-          }
-        });
-      });
-
-      document.querySelectorAll('img[data-src]').forEach(img => observer.observe(img));
-    });
-  ''');
-  }
-  void _setupMemoryManagement() {
-    // Clear memory when app goes to background
-    SystemChannels.lifecycle.setMessageHandler((msg) async {
-      if (msg == AppLifecycleState.paused.toString()) {
-        _preloadManager.clearPreloadedContent();
-        await _webViewController?.clearCache();
-      }
-      return null;
-    });
-  }
-  // Add these properties to your state class
-  Timer? _loadingTimeoutTimer;
-  static const int _loadingTimeoutSeconds = 8; // Adjust this value as needed
-  // Replace the current _loadUrl method with this optimized version
-  // Future<void> _loadUrl(String url) async {
-  //   if (url.isEmpty) return;
-  //
-  //   // Prevent multiple simultaneous loads
-  //   if (_isNavigating) {
-  //     await _webViewController?.stopLoading();
-  //   }
-  //
-  //   setState(() {
-  //     _isLoading = true;
-  //     _isNavigating = true;
-  //     _progress = 0;
-  //     _isContentReady = false;
-  //   });
-  //
-  //   try {
-  //     // Cancel any existing timers
-  //     _loadingTimeoutTimer?.cancel();
-  //     _navigationDebouncer?.cancel();
-  //
-  //     await _webViewController?.loadUrl(
-  //       urlRequest: URLRequest(
-  //         url: Uri.parse(url),
-  //         headers: {
-  //           'Cache-Control': 'no-cache',
-  //           'Accept': 'text/html,application/json',
-  //           'Accept-Encoding': 'gzip, deflate',
-  //         },
-  //       ),
-  //     );
-  //
-  //     setState(() {
-  //       _currentUrl = url;
-  //     });
-  //
-  //   } catch (e) {
-  //     debugPrint('URL loading error: $e');
-  //     if (mounted) {
-  //       Fluttertoast.showToast(
-  //         msg: "حدث خطأ في تحميل الصفحة",
-  //         backgroundColor: Colors.red,
-  //         textColor: Colors.white,
-  //       );
-  //       setState(() {
-  //         _isLoading = false;
-  //         _isNavigating = false;
-  //         _isContentReady = true;
-  //       });
-  //     }
-  //   }
-  // }
-
-// Update the onBottomNavTapped method
-
-// Update the onLoadStop method
-  // Updated onLoadStop method with CSS injection verification
-  void _onLoadStop(InAppWebViewController controller, Uri? url) async {
-    _loadingTimeoutTimer?.cancel();
-
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = true;
-      _isCssInjected = false;
-      _isContentReady = false;
-    });
-
-    try {
-      // Inject JavaScript first
-      await controller.evaluateJavascript(source: _injectedScript);
-
-      // Inject CSS and verify injection
-      final cssInjected = await injectCustomCSS(controller);
-
-      if (!cssInjected) {
-        // Retry CSS injection once if it fails
-        await Future.delayed(const Duration(milliseconds: 100));
-        await injectCustomCSS(controller);
-      }
-
-      // Small delay to ensure everything is rendered properly
-      await Future.delayed(const Duration(milliseconds: 150));
-
-      if (mounted) {
-        setState(() {
-          _isCssInjected = true;
-          _isContentReady = true;
-          _isInitialLoad = false;
-          _isLoading = false;
-          _isNavigating = false;
-          _progress = 1.0;
-        });
-      }
-    } catch (e) {
-      debugPrint('Error in onLoadStop: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isNavigating = false;
-          _isContentReady = true;
-          _isCssInjected = true; // Fail gracefully
-        });
-      }
-    }
-  }
-// Update the onProgressChanged method
-  void _onProgressChanged(InAppWebViewController controller, int progress) {
-    if (!mounted) return;
-
-    setState(() {
-      _progress = progress / 100;
-      _isLoading = _progress < 1.0;
-    });
-
-    // Auto-hide loading after reaching near completion
-    if (_progress >= 0.5) {
-      Future.delayed(const Duration(milliseconds: 00), () {
-        if (mounted) {
-          setState(() {
-            _isLoading = false;
-            _isContentReady = true;
-          });
-        }
-      });
-    }
-  }
-
-  // Update the onLoadStart method
-  void _onLoadStart(InAppWebViewController controller, Uri? url) {
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = true;
-      _progress = 0;
-      _isContentReady = false;
-      _isCssInjected = false;
-    });
-
-    // Cancel any existing timeout timer
-    _loadingTimeoutTimer?.cancel();
-
-    // Start new timeout timer
-    _loadingTimeoutTimer = Timer(Duration(seconds: _loadingTimeoutSeconds), () {
-      if (mounted && _isLoading) {
-        _handleLoadingTimeout(controller);
-      }
-    });
-  }
-
-  // Add this method to handle timeouts
-  void _handleLoadingTimeout(InAppWebViewController controller) async {
-    debugPrint('Page load timed out - attempting reload');
-
-    if (!mounted) return;
-
-    setState(() {
-      _isLoading = false;
-      _isContentReady = false;
-    });
-
-    // Show toast message
-    Fluttertoast.showToast(
-      msg: "تحميل بطيء - جاري إعادة المحاولة",
-      backgroundColor: Colors.orange,
-      textColor: Colors.white,
-      toastLength: Toast.LENGTH_SHORT,
-    );
-
-    try {
-      // Stop current load
-      await controller.stopLoading();
-
-      // Attempt to reload the page
-      setState(() {
-        _isLoading = true;
-        _progress = 0;
-      });
-
-      // Get current URL
-      final currentUrl = await controller.getUrl();
-      if (currentUrl != null) {
-        await controller.loadUrl(
-          urlRequest: URLRequest(
-            url: currentUrl,
-            headers: {
-              'Cache-Control': 'no-cache',
-              'Accept': 'text/html,application/json',
-              'Accept-Encoding': 'gzip, deflate',
-            },
-          ),
-        );
-      }
-    } catch (e) {
-      debugPrint('Error during timeout reload: $e');
-      if (mounted) {
-        setState(() {
-          _isLoading = false;
-          _isContentReady = true;
-        });
-      }
-    }
-  }
-
-// Update the onLoadStop method to cancel the timeout timer
-
-// Don't forget to clean up the timer in dispose
 
   // Keep your existing category lists and other properties
 
 
 
-  // Future<void> _initPreloading() async {
-  //   // Filter out empty URLs and preload all tabs
-  //   await _preloadManager.preloadTabs(urlsToPreload);
-  // }
-
-  // Update loadUrl method to use preloaded content
-  Future<void> _loadUrl(String url) async {
-    if (url.isEmpty) return;
-
-    if (_isNavigating) {
-      await _webViewController?.stopLoading();
-    }
-
-    setState(() {
-      _isLoading = true;
-      _isNavigating = true;
-      _progress = 0;
-      _isContentReady = false;
-    });
-
-    try {
-      _loadingTimeoutTimer?.cancel();
-      _navigationDebouncer?.cancel();
-
-      // Check for preloaded content
-      final preloadedContent = _preloadManager.getPreloadedContent(url);
-      if (preloadedContent != null) {
-        await _webViewController?.loadData(
-          data: preloadedContent,
-          baseUrl: WebUri.uri(Uri.parse(url)), // Convert String to Uri
-          historyUrl: WebUri.uri(Uri.parse(url)), // Convert String to Uri
-          encoding: 'UTF-8',
-          mimeType: 'text/html',
-        );
-      } else {
-        await _webViewController?.loadUrl(
-          urlRequest: URLRequest(
-            url: WebUri.uri(Uri.parse(url)),
-            headers: {
-              'Cache-Control': 'no-cache',
-              'Accept': 'text/html,application/json',
-              'Accept-Encoding': 'gzip, deflate',
-            },
-          ),
-        );
-      }
-
-      setState(() => _currentUrl = url);
-
-    } catch (e) {
-      debugPrint('URL loading error: $e');
-      if (mounted) {
-        Fluttertoast.showToast(
-          msg: "حدث خطأ في تحميل الصفحة",
-          backgroundColor: Colors.red,
-          textColor: Colors.white,
-        );
-        setState(() {
-          _isLoading = false;
-          _isNavigating = false;
-          _isContentReady = true;
-        });
-      }
-    }
-  }
-  @override
-  void dispose() {
-    _loadingTimeoutTimer?.cancel();
-    _navigationDebouncer?.cancel();
-    WebViewUrlHandler.setWebViewController(null);
-    _connectivitySubscription.cancel();
-    _preloadManager.dispose(); // Add this line
-    super.dispose();
-  }
-  Future<void> _initializeCacheDirectory() async {
-    final appDir = await getApplicationDocumentsDirectory();
-    _cacheDirectory = Directory('${appDir.path}/webview_cache');
-    if (!await _cacheDirectory.exists()) {
-      await _cacheDirectory.create(recursive: true);
-    }
-  }
-
-  Future<void> _loadCachedContent() async {
-    try {
-      final prefs = await SharedPreferences.getInstance();
-      _cachedHomePage = prefs.getString('home_page_cache');
-      _isOfflineModeAvailable = _cachedHomePage != null;
-    } catch (e) {
-      debugPrint('Error loading cached content: $e');
-    }
-  }
-
-
-  Future<void> _preloadCriticalResources() async {
-    final criticalResources = [
-      'https://jifirephone.com/cdn/shop/t/1/assets/theme.css',
-      'https://jifirephone.com/cdn/shop/t/1/assets/theme.js',
-      // Add other critical resources
-    ];
-
-    for (var resource in criticalResources) {
-      try {
-        final response = await http.get(Uri.parse(resource));
-        if (response.statusCode == 200) {
-          final resourcePath = '${_cacheDirectory.path}/${Uri.parse(resource).pathSegments.last}';
-          await File(resourcePath).writeAsBytes(response.bodyBytes);
-        }
-      } catch (e) {
-        debugPrint('Error preloading resource: $e');
-      }
-    }
-  }
-
-  // Optimized page load method
-
-  // Add optimization for resource loading
-  Future<void> _optimizeResourceLoading() async {
-    await _webViewController?.evaluateJavascript(source: '''
-      // Defer non-critical resources
-      function deferNonCriticalResources() {
-        document.querySelectorAll('img[loading="eager"]')
-          .forEach(img => img.setAttribute('loading', 'lazy'));
-        
-        // Defer non-critical CSS
-        document.querySelectorAll('link[rel="stylesheet"]')
-          .forEach(link => {
-            if (!link.href.includes('critical')) {
-              link.setAttribute('media', 'print');
-              link.setAttribute('onload', "this.media='all'");
-            }
-          });
-      }
-      
-      // Execute optimization
-      deferNonCriticalResources();
-      
-      // Optimize third-party scripts
-      var observer = new PerformanceObserver((list) => {
-        list.getEntries().forEach(entry => {
-          if (entry.initiatorType === 'script' && entry.duration > 100) {
-            console.log('Slow script:', entry.name);
-          }
-        });
-      });
-      observer.observe({entryTypes: ['resource']});
-    ''');
-  }
 
 
   @override
@@ -654,10 +184,8 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
         body: SafeArea(
           child: Stack(
             children: [
-              // Wrap WebView in AnimatedOpacity for smooth transition
-              AnimatedOpacity(
-                opacity: _isContentReady && _isCssInjected ? 1.0 : 0.0,
-                duration: const Duration(milliseconds: 300),
+              Opacity(
+                opacity: _isContentReady ? 1.0 : 0.0,
                 child: InAppWebView(
                   initialUrlRequest: URLRequest(
                     url: WebUri.uri(Uri.parse(_urls[0])),
@@ -670,9 +198,6 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                   initialOptions: _options,
                   onWebViewCreated: (InAppWebViewController controller) async {
                     _webViewController = controller;
-                    WebViewUrlHandler.setWebViewController(controller);
-
-                    // Add JavaScript handler
                     controller.addJavaScriptHandler(
                       handlerName: 'handleUrl',
                       callback: (args) async {
@@ -683,20 +208,64 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                       },
                     );
                   },
-                  onLoadStart: _onLoadStart,
+                  onLoadStart: (controller, url) {
+                    setState(() {
+                      _isLoading = true;
+                      _progress = 0;
+                      _isContentReady = false;
+                      _isCssInjected = false;
+                    });
+                  },
                   onProgressChanged: _onProgressChanged,
-                  onLoadStop: _onLoadStop,
+                  onLoadStop: (controller, url) async {
+                    await controller.evaluateJavascript(source: _injectedScript);
+                    await _injectCustomCSS(controller);
+
+                    Future.delayed(const Duration(milliseconds: 500), () {
+                      if (mounted) {
+                        setState(() {
+                          _isCssInjected = true;
+                          _isContentReady = true;
+                          _isInitialLoad = false;
+                          _isLoading = false;
+                        });
+                      }
+                    });
+                  },
                   onLoadError: _onLoadError,
                   onLoadResource: (controller, resource) async {
-                    // ... keep existing onLoadResource code ...
+                    final url = resource.url.toString();
+                    if (_CacheableResource.isCacheable(url)) {
+                      await _injectCustomCSS(controller);
+                      try {
+                        final content = await controller.evaluateJavascript(
+                            source: '''
+                            (function() {
+                              const element = document.querySelector('[src="${url}"]');
+                              return element ? element.outerHTML : null;
+                            })()
+                          '''
+                        );
+
+                        if (content != null) {
+                          await _cacheManager.cacheResource(url, content.toString());
+                        }
+                      } catch (e) {
+                        debugPrint('Error caching resource: $e');
+                      }
+                    }
                   },
                   shouldOverrideUrlLoading: (controller, navigationAction) async {
-                    // ... keep existing shouldOverrideUrlLoading code ...
+                    final url = navigationAction.request.url?.toString() ?? '';
+                    if (_shouldHandleExternally(url)) {
+                      await _handleExternalUrl(url);
+                      return NavigationActionPolicy.CANCEL;
+                    }
+                    return NavigationActionPolicy.ALLOW;
                   },
                 ),
               ),
-              // Updated loading overlay
-              if (!_isContentReady || !_isCssInjected || _isLoading)
+              if (!_isContentReady || _isLoading)
                 Container(
                   color: Colors.white,
                   child: Center(
@@ -708,15 +277,20 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                           size: 50,
                         ),
                         const SizedBox(height: 20),
-                        Text(
-                          _isInitialLoad ? 'جاري التحميل...' : 'جاري تحميل الصفحة...',
-                          style: const TextStyle(
-                            fontSize: 16,
-                            color: Colors.grey,
+                        if (_isInitialLoad)
+                          const Text(
+                            'جاري التحميل...',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.grey,
+                            ),
                           ),
-                        ),
                         if (_isLoading && !_isInitialLoad)
-                          Container(),
+                          LinearProgressIndicator(
+                            value: _progress,
+                            backgroundColor: Colors.grey[300],
+                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                          ),
                       ],
                     ),
                   ),
@@ -724,233 +298,242 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
             ],
           ),
         ),
-        bottomNavigationBar: _buildBottomNavigationBar(),
-      ),
-    );
-  }
-
-  Widget _buildOfflineContent() {
-    return Container(
-      color: Colors.white,
-      child: Center(
-        child: Text(
-          'Loading from cache...',
-          style: Theme.of(context).textTheme.bodyLarge,
+        bottomNavigationBar: Container(
+          decoration: BoxDecoration(
+            border: Border(
+              top: BorderSide(
+                color: Colors.grey.shade300,
+                width: 1.0,
+              ),
+            ),
+          ),
+          child: BottomNavigationBar(
+            currentIndex: _currentIndex,
+            onTap: _onBottomNavTapped,
+            type: BottomNavigationBarType.fixed,
+            backgroundColor: Colors.white,
+            selectedItemColor: Colors.blue.shade700,
+            unselectedItemColor: Colors.grey.shade600,
+            selectedFontSize: 12,
+            unselectedFontSize: 12,
+            items: _navigationItems,
+          ),
         ),
       ),
     );
   }
+
   // Add this method to verify CSS injection
-  Future<bool> injectCustomCSS(InAppWebViewController controller) async {
+  Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
     try {
-      // Get current URL to check if we're on homepage
-      final currentUrl = (await controller.getUrl())?.toString() ?? '';
-      final isHomePage = currentUrl == 'https://jifirephone.com/' ||
-          currentUrl == 'https://jifirephone.com';
+      const String customCSS = '''
+    /* Hide footer */
+    footer,
+    .footer,
+    .footer-wrapper,
+    [class="footer"],
+    [class*="Footer"] {
+      display: none !important;
+    }
+    
+    /* Hide Section tabs - Comprehensive */
+    .section-tabs,
+    [class="section*tabs_"],
+    [class*="section-tabs"],
+    .section_tabs_qdCwfH,
+    .section_tabs_FyqqtV,
+    .section_tabs_mcbiHD,
+    .tab-content,
+    .tab-panel,
+    [class*="tab-"],
+    [data-section-type*="section-tabs"],
+    [data-section-id*="section-tabs"],
+    .tabs-wrapper,
+    .tabs-container,
+    .tab-navigation,
+    .tab-header,
+    .tab-list,
+    .tab-panels,
+    [class*="tab_content"],
+    [class*="TabContent"],
+    [class*="tabpanel"],
+    .section-tab-container,
+    [class*="section-tab"],
+    [role="tablist"],
+    [role="tab"],
+    [role="tabpanel"] {
+      display: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
 
-      // Define CSS sections separately for better maintainability
-      final String hideCollectionBannerCSS = isHomePage ? '' : '''
-/* Hide Collection banner elements */
-.collection-banner,
-.collection-hero,
-[class*="collection-banner"],
-[class*="collection-hero"],
-[class*="collection_banner"],
-[class*="collection_hero"],
-.collection-header,
-[class*="collection-header"],
-[data-section-type*="collection-banner"],
-[data-section-id*="collection-banner"],
-.collection-description,
-.collection-intro,
-[class*="collection-intro"],
-.collection-title-banner,
-.collection-banner-image,
-.collection-banner-content {
-  display: none !important;
-}
-''';
+    /* Hide Collection banners and split banners */
+    .collection-banner,
+    .main-collection-banner,
+    .main-collection-split-banner,
+    [class*="collection-banner"],
+    [class*="collection_banner"],
+    [class*="collection-split"],
+    [class*="split-banner"],
+    [data-section-type="collection-banner"],
+    [data-section-type="main-collection-banner"],
+    [data-section-type="main-collection-split-banner"],
+    .collection-hero,
+    .collection-header,
+    .banner-split,
+    .collection-split-banner,
+    .split-banner-section,
+    [class*="split-collection"],
+    [class*="collection-split-banner"],
+    [class*="banner-split"],
+    .banner__box.banner-split,
+    .collection__banner.split,
+    .banner.split-style,
+    .collection-split {
+      display: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+      margin: 0 !important;
+      padding: 0 !important;
+    }
+    
+    /* Hide Stats counter */
+    .stats,
+    [class*="stats_"],
+    .stats_AhFJcf,
+    .stats-counter,
+    .stat-block,
+    [class*="stat-"] {
+      display: none !important;
+    }
+    
+    /* Hide Email signup sections */
+    .newsletter,
+    [class*="newsletter_"],
+    .email-signup,
+    .newsletter_JjUqmd,
+    .subscription-form,
+    [class*="signup-"],
+    [class*="subscribe-"] {
+      display: none !important;
+    }
+    
+    /* Hide Icons with text */
+    .icons-with-text,
+    [class*="icons_with_text_"],
+    .icons_with_text_A8P3h4,
+    .icons_with_text_74BKWK,
+    .icon-blocks,
+    [class*="icon-with-"] {
+      display: none !important;
+    }
 
-      const String hideFooterCSS = '''
-/* Hide footer elements */
-footer,
-.footer,
-.footer-wrapper,
-[class="footer"],
-[class="Footer"] {
-  display: none !important;
-}
-''';
+    /* Hide Ribbon banners */
+    .ribbon-banner,
+    .section-ribbon-banner,
+    [class*="ribbon_banner_"],
+    [class*="ribbon-banner"],
+    .ribbon_banner_ULeYX9,
+    .ribbon_banner_kAqDx9,
+    .ribbon_banner_JefMbE,
+    .ribbon_banner_zkP4Bb,
+    .announcement-bar,
+    [class*="banner-"],
+    [class*="ribbon-"],
+    .promotional-banner,
+    [data-section-type*="ribbon"],
+    [data-section-id*="ribbon"] {
+      display: none !important;
+      height: 0 !important;
+      min-height: 0 !important;
+      overflow: hidden !important;
+      visibility: hidden !important;
+      opacity: 0 !important;
+      pointer-events: none !important;
+    }
 
-      const String hideSectionTabsCSS = '''
-/* Hide Section tabs */
-.section-tabs,
-[class*="sectiontabs"],
-[class*="section-tabs"],
-.section_tabs_qdCwfH,
-.section_tabs_FyqqtV,
-.section_tabs_mcbiHD,
-.tab-content,
-.tab-panel,
-[class*="tab-"],
-[data-section-type*="section-tabs"],
-[data-section-id*="section-tabs"],
-.tabs-wrapper,
-.tabs-container,
-.tab-navigation,
-.tab-header,
-.tab-list,
-.tab-panels,
-[class*="tab_content"],
-[class*="TabContent"],
-[class*="tabpanel"],
-.section-tab-container,
-[class*="section-tab"],
-[role="tablist"],
-[role="tab"],
-[role="tabpanel"] {
-  display: none !important;
-}
-''';
+    /* Fix layout spacing after hiding elements */
+    .main-content {
+      padding-top: 0 !important;
+    }
 
-      const String hideStatsCSS = '''
-/* Hide Stats elements */
-.stats,
-[class*="stats_"],
-.stats_AhFJcf,
-.stats-counter,
-.stat-block,
-[class*="stat-"] {
-  display: none !important;
-}
-''';
+    body {
+      padding-top: 0 !important;
+      margin-top: 0 !important;
+    }
 
-      const String hideEmailSignupCSS = '''
-/* Hide Email signup sections */
-.newsletter,
-[class*="newsletter_"],
-.email-signup,
-.newsletter_JjUqmd,
-.subscription-form,
-[class*="signup-"],
-[class*="subscribe-"] {
-  display: none !important;
-}
-''';
+    /* Hide related spacing elements */
+    [class*="spacer_"],
+    .spacer,
+    .divider,
+    [class*="section-spacing"] {
+      display: none !important;
+    }
 
-      const String hideIconsWithTextCSS = '''
-/* Hide Icons with text */
-.icons-with-text,
-[class*="icons_with_text_"],
-.icons_with_text_A8P3h4,
-.icons_with_text_74BKWK,
-.icon-blocks,
-[class*="icon-with-"] {
-  display: none !important;
-}
-''';
+    /* Fix any remaining spacing issues */
+    .section-content {
+      margin-top: 0 !important;
+      padding-top: 0 !important;
+    }
 
-      const String hideRibbonBannersCSS = '''
-/* Hide Ribbon banners */
-.ribbon-banner,
-.section-ribbon-banner,
-[class*="ribbon_banner_"],
-[class*="ribbon-banner"],
-.ribbon_banner_ULeYX9,
-.ribbon_banner_kAqDx9,
-.ribbon_banner_JefMbE,
-.ribbon_banner_zkP4Bb,
-.announcement-bar,
-[class*="ribbon-"],
-.promotional-banner,
-[data-section-type*="ribbon"],
-[data-section-id*="ribbon"] {
-  display: none !important;
-}
-''';
+    /* Hide any section wrappers that might contain tabs or banners */
+    [class*="section-wrapper"],
+    [class*="section-container"],
+    [class*="split-wrapper"],
+    [class*="split-container"] {
+      margin-top: 0 !important;
+      padding-top: 0 !important;
+    }
+    ''';
 
-      const String layoutFixesCSS = '''
-/* Fix layout spacing */
-.main-content {
-  padding-top: 0 !important;
-}
-
-body {
-  padding-top: 0 !important;
-  margin-top: 0 !important;
-}
-''';
-
-      // Combine all CSS sections
-      final String completeCSS = '''
-$hideCollectionBannerCSS
-$hideFooterCSS
-$hideSectionTabsCSS
-$hideStatsCSS
-$hideEmailSignupCSS
-$hideIconsWithTextCSS
-$hideRibbonBannersCSS
-$layoutFixesCSS
-''';
-
-      // Inject the combined CSS
-      await controller.injectCSSCode(source: completeCSS);
-
-      // Create a comprehensive list of selectors to verify
-      final selectors = [
-        // Only check collection banner selectors if not on homepage
-        if (!isHomePage) ...[
-          '.collection-banner',
-          '.collection-hero',
-          '.collection-header',
-          '.collection-description',
-        ],
-        // Footer selectors
-        'footer',
-        '.footer',
-        '.footer-wrapper',
-        // Section tabs selectors
-        '.section-tabs',
-        '.tab-content',
-        '.tab-panel',
-        // Stats selectors
-        '.stats',
-        '.stats-counter',
-        // Email signup selectors
-        '.newsletter',
-        '.email-signup',
-        // Icons with text selectors
-        '.icons-with-text',
-        '.icon-blocks',
-        // Ribbon banner selectors
-        '.ribbon-banner',
-        '.announcement-bar'
-      ];
+      // Inject the CSS
+      await controller.injectCSSCode(source: customCSS);
 
       // Verify CSS injection
       final verified = await controller.evaluateJavascript(source: '''
-    (function() {
-      const selectors = ${selectors.map((s) => "'$s'").toList()};
-      const elements = document.querySelectorAll(selectors.join(','));
-      
-      // Check if elements are actually hidden
-      for (const element of elements) {
-        const style = window.getComputedStyle(element);
-        if (style.display !== 'none') {
-          return false;
-        }
-      }
-      
-      return true;
-    })()
+      (function() {
+        const selectors = [
+          '.footer',
+          '.section-tabs',
+          '.ribbon-banner',
+          '.collection-banner',
+          '.stats',
+          '.newsletter',
+          '.icons-with-text'
+        ];
+        
+        const hiddenElements = document.querySelectorAll(selectors.join(','));
+        return hiddenElements.length > 0 && 
+               Array.from(hiddenElements).every(el => 
+                 window.getComputedStyle(el).display === 'none' ||
+                 window.getComputedStyle(el).visibility === 'hidden'
+               );
+      })()
     ''');
-
       return verified == true;
     } catch (e) {
       debugPrint('Error injecting CSS: $e');
       return false;
     }
   }
+  void _onProgressChanged(InAppWebViewController controller, int progress) {
+    if (!mounted) return;
+
+    setState(() {
+      _progress = progress / 100;
+      _isLoading = _progress < 0.9;
+    });
+  }
+  // Optimize script injection timing
   final List<AccessoryCategory> accessoryCategories = [
     AccessoryCategory(
       name: 'ساعات',
@@ -1064,124 +647,6 @@ $layoutFixesCSS
   }
   // URLs for different sections
 
-  _handleNavigation(String newUrl) async {
-    if (newUrl.isEmpty || newUrl == _currentUrl) return;
-
-    try {
-      // Cancel any pending navigation
-      _navigationDebouncer?.cancel();
-
-      setState(() {
-        _isLoading = true;
-        _progress = 0;
-        _isNavigating = true;
-      });
-
-      // Clear current page if any
-      await _webViewController?.stopLoading();
-
-      // Load new URL
-      await _webViewController?.loadUrl(
-        //urlRequest: URLRequest(
-          urlRequest: URLRequest(
-            url: WebUri.uri(Uri.parse(newUrl)),
-            headers: {
-              'Cache-Control': 'max-age=3600',
-              'Accept': 'text/html,application/json',
-              'Accept-Encoding': 'gzip, deflate',
-            },
-          ),
-      );
-
-      _currentUrl = newUrl; // Update the current URL
-    } catch (e) {
-      debugPrint('Error during navigation: $e');
-      setState(() {
-        _isLoading = false;
-        _isNavigating = false;
-      });
-    }
-  }
-
-// Update bottom navigation handler
-
-
-
-  void _updateWebViewOptions() {
-    if (_webViewController != null) {
-      _webViewController!.setOptions(options: InAppWebViewGroupOptions(
-        crossPlatform: InAppWebViewOptions(
-          useShouldOverrideUrlLoading: true,
-          mediaPlaybackRequiresUserGesture: false,
-          cacheEnabled: true,
-          clearCache: false,
-          preferredContentMode: UserPreferredContentMode.MOBILE,
-          javaScriptEnabled: true,
-          transparentBackground: true,
-          resourceCustomSchemes: ['tel', 'mailto'],
-          minimumFontSize: 10,
-          useOnLoadResource: true,
-          incognito: false,
-          supportZoom: false,
-          applicationNameForUserAgent: 'MobileApp',
-        ),
-        android: AndroidInAppWebViewOptions(
-          useHybridComposition: true,
-          mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-          safeBrowsingEnabled: false,
-          cacheMode: AndroidCacheMode.LOAD_DEFAULT,
-          domStorageEnabled: true,
-          loadWithOverviewMode: true,
-          useWideViewPort: true,
-          hardwareAcceleration: true,
-        ),
-        ios: IOSInAppWebViewOptions(
-          allowsInlineMediaPlayback: true,
-          allowsBackForwardNavigationGestures: true,
-          enableViewportScale: false,
-        ),
-      ));
-    }
-  }
-
-  late final InAppWebViewGroupOptions _options = InAppWebViewGroupOptions(
-    crossPlatform: InAppWebViewOptions(
-      useShouldOverrideUrlLoading: true,
-      mediaPlaybackRequiresUserGesture: false,
-      cacheEnabled: true,
-      clearCache: false,
-      preferredContentMode: UserPreferredContentMode.MOBILE,
-      javaScriptEnabled: true,
-      transparentBackground: true,
-      resourceCustomSchemes: ['tel', 'mailto'],
-      minimumFontSize: 10,
-      useOnLoadResource: true,
-      incognito: false,
-      supportZoom: false,
-      userAgent: 'Mozilla/5.0 (iPhone; CPU iPhone OS 14_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.0.3 Mobile/15E148 Safari/604.1',
-    ),
-    android: AndroidInAppWebViewOptions(
-      useHybridComposition: true,
-      mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-      safeBrowsingEnabled: false,
-      cacheMode: AndroidCacheMode.LOAD_DEFAULT,
-      allowContentAccess: true,
-      allowFileAccess: true,
-      databaseEnabled: true,
-      domStorageEnabled: true,
-      loadWithOverviewMode: true,
-      useWideViewPort: true,
-      hardwareAcceleration: true,
-      builtInZoomControls: false,
-    ),
-    ios: IOSInAppWebViewOptions(
-      allowsInlineMediaPlayback: true,
-      allowsBackForwardNavigationGestures: true,
-      enableViewportScale: false,
-      isFraudulentWebsiteWarningEnabled: false,
-    ),
-  );
-
   void _showAccessoriesBottomSheet() {
     final isTablet = MediaQuery.of(context).size.width >= 768;
     final screenHeight = MediaQuery.of(context).size.height;
@@ -1262,6 +727,162 @@ $layoutFixesCSS
       ),
     );
   }
+  _handleNavigation(String newUrl) async {
+    if (newUrl.isEmpty || newUrl == _currentUrl) return;
+
+    try {
+      // Cancel any pending navigation
+      _navigationDebouncer?.cancel();
+
+      setState(() {
+        _isLoading = true;
+        _progress = 0;
+        _isNavigating = true;
+      });
+
+      // Clear current page if any
+      await _webViewController?.stopLoading();
+
+      // Load new URL
+      await _webViewController?.loadUrl(
+        urlRequest: URLRequest(
+          url: WebUri.uri(Uri.parse(newUrl)),
+          headers: {
+            'Cache-Control': 'max-age=3600',
+            'Accept': 'text/html,application/json',
+            'Accept-Encoding': 'gzip, deflate',
+          },
+        ),
+      );
+
+      _currentUrl = newUrl; // Update the current URL
+    } catch (e) {
+      debugPrint('Error during navigation: $e');
+      setState(() {
+        _isLoading = false;
+        _isNavigating = false;
+      });
+    }
+  }
+
+// Update bottom navigation handler
+
+
+  void _onBottomNavTapped(int index) async {
+    // Always update the current index first
+    setState(() {
+      _currentIndex = index;
+    });
+
+    // For device categories (index 1) and accessories (index 5), show bottom sheets
+    if (index == 1) {
+      _showDeviceCategoriesBottomSheet();
+      return;
+    } else if (index == 5) {
+      _showAccessoriesBottomSheet();
+      return;
+    }
+
+    // Force navigation to the new URL
+    final String targetUrl = _urls[index];
+    if (targetUrl.isNotEmpty) {
+      try {
+        // Stop any current loading
+        await _webViewController?.stopLoading();
+
+        // Clear current page
+        await _webViewController?.loadUrl(
+          urlRequest: URLRequest(
+            url: WebUri.uri(Uri.parse('about:blank')),
+          ),
+        );
+
+        // Force load new URL with cache headers
+        await _webViewController?.loadUrl(
+          urlRequest: URLRequest(
+            url:WebUri.uri(Uri.parse(targetUrl)) ,
+            headers: {
+              'Cache-Control': 'no-cache, no-store, must-revalidate',
+              'Pragma': 'no-cache',
+              'Expires': '0',
+              'Accept': 'text/html,application/json',
+              'Accept-Encoding': 'gzip, deflate',
+            },
+          ),
+        );
+
+        // Update current URL
+        setState(() {
+          _currentUrl = targetUrl;
+          _isLoading = true;
+          _progress = 0;
+        });
+      } catch (e) {
+        debugPrint('Navigation error: $e');
+        setState(() {
+          _isLoading = false;
+        });
+
+        // Show error toast
+        Fluttertoast.showToast(
+          msg: "حدث خطأ في التنقل",
+          backgroundColor: Colors.red,
+          textColor: Colors.white,
+          toastLength: Toast.LENGTH_SHORT,
+          gravity: ToastGravity.BOTTOM,
+        );
+      }
+    }
+  }
+
+
+  late final InAppWebViewGroupOptions _options = InAppWebViewGroupOptions(
+    crossPlatform: InAppWebViewOptions(
+      useShouldOverrideUrlLoading: true,
+      mediaPlaybackRequiresUserGesture: false,
+      cacheEnabled: true,
+      clearCache: false,
+      preferredContentMode: UserPreferredContentMode.MOBILE,
+      //allowsInlineMediaPlayback: true,
+      javaScriptEnabled: true,
+      transparentBackground: true,
+      // Resource optimization
+      resourceCustomSchemes: ['tel', 'mailto'],
+      minimumFontSize: 10,
+      useOnLoadResource: true,
+      // Reduce memory usage
+      incognito: false,
+      supportZoom: false,
+    ),
+    android: AndroidInAppWebViewOptions(
+      useHybridComposition: true,
+      mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+      safeBrowsingEnabled: false,
+      // Cache optimization
+      cacheMode: AndroidCacheMode.LOAD_CACHE_ELSE_NETWORK,
+      allowContentAccess: true,
+      allowFileAccess: true,
+      // Database optimization
+      databaseEnabled: true,
+      domStorageEnabled: true,
+      // Layout optimization
+      loadWithOverviewMode: true,
+      useWideViewPort: true,
+      // Performance optimization
+      hardwareAcceleration: true,
+    ),
+    ios: IOSInAppWebViewOptions(
+      allowsInlineMediaPlayback: true,
+      allowsBackForwardNavigationGestures: true,
+      // Cache optimization
+      enableViewportScale: false,
+      // Performance optimization
+      isFraudulentWebsiteWarningEnabled: false,
+      //isPrefetchingEnabled: true,
+    ),
+  );
+
+
 
   void _showDeviceCategoriesBottomSheet() {
     final isTablet = MediaQuery.of(context).size.width >= 768;
@@ -1345,6 +966,57 @@ $layoutFixesCSS
   }
 
 
+// Optimize page loading
+  void _loadUrl(String url) async {
+    if (url.isEmpty) return;
+
+    try {
+      // Stop current loading
+      await _webViewController?.stopLoading();
+
+      // Clear current page
+      await _webViewController?.loadUrl(
+        urlRequest: URLRequest(
+          url: WebUri.uri(Uri.parse('about:blank')),
+        ),
+      );
+
+      // Force load new URL with cache headers
+      await _webViewController?.loadUrl(
+        urlRequest: URLRequest(
+          url: WebUri.uri(Uri.parse(url)),
+          headers: {
+            'Cache-Control': 'no-cache, no-store, must-revalidate',
+            'Pragma': 'no-cache',
+            'Expires': '0',
+            'Accept': 'text/html,application/json',
+            'Accept-Encoding': 'gzip, deflate',
+          },
+        ),
+      );
+
+      setState(() {
+        _currentUrl = url;
+        _isLoading = true;
+        _progress = 0;
+      });
+    } catch (e) {
+      debugPrint('URL loading error: $e');
+      setState(() {
+        _isLoading = false;
+      });
+
+      // Show error toast
+      Fluttertoast.showToast(
+        msg: "حدث خطأ في تحميل الصفحة",
+        backgroundColor: Colors.red,
+        textColor: Colors.white,
+        toastLength: Toast.LENGTH_SHORT,
+        gravity: ToastGravity.BOTTOM,
+      );
+    }
+  }
+
 
 
 
@@ -1389,7 +1061,16 @@ $layoutFixesCSS
         }, true);
       ''';
 
-
+  // Update onLoadStart for better state management
+  void _onLoadStart(InAppWebViewController controller, Uri? url) {
+    if (mounted) {
+      setState(() {
+        _isLoading = true;
+        _progress = 0;
+      });
+      //  _injectRemovalScript(controller);
+    }
+  }
 
 
 
@@ -1779,327 +1460,5 @@ class _CacheableResource {
   static bool isCacheable(String url) {
     final cacheableExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.css', '.js'];
     return cacheableExtensions.any((ext) => url.toLowerCase().endsWith(ext));
-  }
-}
-
-
-class PreloadManager {
-  final Map<String, String> _preloadedContent = {};
-  bool _isPreloading = false;
-  final http.Client _client = http.Client();
-
-  // The URLs to preload
-  final List<String> _urls = [
-    'https://jifirephone.com/',
-    'https://jifirephone.com/collections/%D9%83%D8%A7%D9%85%D9%8A%D8%B1%D8%A7%D8%AA-%D9%85%D8%B1%D8%A7%D9%82%D8%A8%D8%A9',
-    'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%AD%D8%A7%D8%B3%D9%88%D8%A8',
-    'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%A7%D9%84%D8%B9%D8%A7%D8%A8-%D9%88%D8%AA%D8%B1%D9%81%D9%8A%D9%87',
-  ];
-
-  Future<void> preloadAll() async {
-    if (_isPreloading) return;
-    _isPreloading = true;
-
-    try {
-      await Future.wait(
-        _urls.map((url) => _preloadUrl(url)),
-      );
-    } catch (e) {
-      debugPrint('Preload error: $e');
-    } finally {
-      _isPreloading = false;
-    }
-  }
-
-  Future<void> _preloadUrl(String url) async {
-    try {
-      final response = await _client.get(
-        Uri.parse(url),
-        headers: {
-          'Accept': 'text/html,application/json',
-          'Accept-Encoding': 'gzip, deflate',
-          'Cache-Control': 'max-age=3600',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        _preloadedContent[url] = response.body;
-        debugPrint('Successfully preloaded: $url');
-      }
-    } catch (e) {
-      debugPrint('Error preloading $url: $e');
-    }
-  }
-
-  String? getPreloadedContent(String url) => _preloadedContent[url];
-
-  void clearPreloadedContent() {
-    _preloadedContent.clear();
-  }
-
-  void dispose() {
-    _client.close();
-    clearPreloadedContent();
-  }
-}
-
-// Usage in your WebView state class:
-/*
-class _TrustKsaWebViewState extends State<TrustKsaWebView> {
-  final PreloadManager _preloadManager = PreloadManager();
-
-  @override
-  void initState() {
-    super.initState();
-    _preloadManager.preloadAll();
-  }
-
-  @override
-  void dispose() {
-    _preloadManager.dispose();
-    super.dispose();
-  }
-}
-*/
-class EnhancedPreloadManager {
-  final Map<String, String> _preloadedContent = {};
-  final Map<String, int> _hitCount = {};
-  final Set<String> _loadingUrls = {};
-  bool _isPreloading = false;
-  final http.Client _client = http.Client();
-  Timer? _cleanupTimer;
-
-  // Priority queue for resources
-  final Queue<String> _priorityQueue = Queue<String>();
-
-  // Resource timing data
-  final Map<String, Duration> _loadTimes = {};
-
-  EnhancedPreloadManager() {
-    _initCleanupTimer();
-  }
-
-  void _initCleanupTimer() {
-    _cleanupTimer = Timer.periodic(const Duration(minutes: 5), (_) {
-      _cleanupUnusedResources();
-    });
-  }
-
-  Future<void> preloadTabs(List<String> urls, {bool isPriority = false}) async {
-    if (_isPreloading) return;
-    _isPreloading = true;
-
-    try {
-      // Sort URLs by priority (based on hit count and load times)
-      final sortedUrls = _sortUrlsByPriority(urls);
-
-      // Preload in batches to avoid overwhelming the device
-      for (var i = 0; i < sortedUrls.length; i += 3) {
-        final batch = sortedUrls.skip(i).take(3);
-        await Future.wait(
-          batch.map((url) => _preloadUrlWithRetry(url)),
-        );
-        // Small delay between batches
-        await Future.delayed(const Duration(milliseconds: 100));
-      }
-
-      // Preload critical resources for each URL
-      await _preloadCriticalResources(sortedUrls);
-
-    } catch (e) {
-      debugPrint('Preload error: $e');
-    } finally {
-      _isPreloading = false;
-    }
-  }
-
-  List<String> _sortUrlsByPriority(List<String> urls) {
-    return urls.where((url) => url.isNotEmpty).toList()
-      ..sort((a, b) {
-        final aScore = _calculatePriorityScore(a);
-        final bScore = _calculatePriorityScore(b);
-        return bScore.compareTo(aScore);
-      });
-  }
-
-  double _calculatePriorityScore(String url) {
-    final hitCount = _hitCount[url] ?? 0;
-    final loadTime = _loadTimes[url]?.inMilliseconds ?? 1000;
-    return (hitCount * 1000) / loadTime;
-  }
-
-  Future<void> _preloadUrlWithRetry(String url, {int retries = 3}) async {
-    if (_loadingUrls.contains(url)) return;
-    _loadingUrls.add(url);
-
-    try {
-      for (var i = 0; i < retries; i++) {
-        try {
-          final stopwatch = Stopwatch()..start();
-
-          final response = await _client.get(
-            Uri.parse(url),
-            headers: {
-              'Accept': 'text/html,application/json',
-              'Accept-Encoding': 'gzip, deflate',
-              'Cache-Control': 'max-age=3600',
-              'Priority': 'high',
-            },
-          );
-
-          stopwatch.stop();
-          _loadTimes[url] = stopwatch.elapsed;
-
-          if (response.statusCode == 200) {
-            _preloadedContent[url] = response.body;
-            _hitCount[url] = (_hitCount[url] ?? 0) + 1;
-            break;
-          }
-        } catch (e) {
-          if (i == retries - 1) rethrow;
-          await Future.delayed(Duration(milliseconds: 500 * (i + 1)));
-        }
-      }
-    } finally {
-      _loadingUrls.remove(url);
-    }
-  }
-
-  Future<void> _preloadCriticalResources(List<String> urls) async {
-    final criticalPaths = [
-      '/assets/theme.css',
-      '/assets/theme.js',
-      '/assets/critical.css',
-      '/assets/fonts.css',
-    ];
-
-    for (var url in urls) {
-      final baseUrl = Uri.parse(url);
-      for (var path in criticalPaths) {
-        try {
-          final resourceUrl = Uri.parse(baseUrl.origin + path);
-          await _preloadResource(resourceUrl.toString());
-        } catch (e) {
-          debugPrint('Error preloading resource: $e');
-        }
-      }
-    }
-  }
-
-  Future<void> _preloadResource(String url) async {
-    try {
-      final response = await _client.get(Uri.parse(url));
-      if (response.statusCode == 200) {
-        _preloadedContent[url] = response.body;
-      }
-    } catch (e) {
-      debugPrint('Error preloading resource: $e');
-    }
-  }
-
-  void _cleanupUnusedResources() {
-    final now = DateTime.now();
-    final unusedThreshold = const Duration(minutes: 30);
-
-    _preloadedContent.removeWhere((url, _) {
-      final lastHit = _loadTimes[url];
-      return lastHit != null && now.difference(lastHit as DateTime) > unusedThreshold;
-    });
-  }
-
-  String? getPreloadedContent(String url) {
-    if (_preloadedContent.containsKey(url)) {
-      _hitCount[url] = (_hitCount[url] ?? 0) + 1;
-      return _preloadedContent[url];
-    }
-    return null;
-  }
-
-  void clearPreloadedContent() {
-    _preloadedContent.clear();
-    _hitCount.clear();
-    _loadTimes.clear();
-  }
-
-  void dispose() {
-    _cleanupTimer?.cancel();
-    _client.close();
-    clearPreloadedContent();
-  }
-}
-
-// Additional optimization techniques:
-
-class WebViewOptimizer {
-  static Future<void> injectPerformanceOptimizations(InAppWebViewController controller) async {
-    await controller.evaluateJavascript(source: '''
-      // Optimize image loading
-      function optimizeImages() {
-        const images = document.querySelectorAll('img[loading="eager"]');
-        images.forEach(img => {
-          img.loading = 'lazy';
-          img.decoding = 'async';
-        });
-      }
-
-      // Defer non-critical resources
-      function deferNonCriticalResources() {
-        const nonCritical = document.querySelectorAll(
-          'link[rel="stylesheet"]:not([data-critical="true"])'
-        );
-        nonCritical.forEach(link => {
-          link.media = 'print';
-          link.onload = () => link.media = 'all';
-        });
-      }
-
-      // Preconnect to required origins
-      function setupPreconnect() {
-        const origins = new Set();
-        document.querySelectorAll('img, script, link').forEach(el => {
-          try {
-            const url = new URL(el.src || el.href);
-            origins.add(url.origin);
-          } catch {}
-        });
-        
-        origins.forEach(origin => {
-          const link = document.createElement('link');
-          link.rel = 'preconnect';
-          link.href = origin;
-          document.head.appendChild(link);
-        });
-      }
-
-      // Initialize optimizations
-      optimizeImages();
-      deferNonCriticalResources();
-      setupPreconnect();
-      
-      // Monitor performance
-      const observer = new PerformanceObserver((list) => {
-        list.getEntries().forEach(entry => {
-          if (entry.duration > 100) {
-            console.log('Slow resource:', entry.name, entry.duration);
-          }
-        });
-      });
-      
-      observer.observe({ entryTypes: ['resource', 'navigation', 'paint'] });
-    ''');
-  }
-
-  static Future<void> setupServiceWorker(InAppWebViewController controller) async {
-    await controller.evaluateJavascript(source: '''
-      if ('serviceWorker' in navigator) {
-        navigator.serviceWorker.register('/sw.js')
-          .then(registration => {
-            console.log('ServiceWorker registered');
-          })
-          .catch(error => {
-            console.log('ServiceWorker registration failed:', error);
-          });
-      }
-    ''');
   }
 }
