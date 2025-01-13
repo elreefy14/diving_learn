@@ -1,6 +1,9 @@
 // First, create a new file onboarding_screen.dart:
 
+import 'dart:developer';
+
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,6 +38,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       'description': 'نقدم مجموعة واسعة من الهواتف الذكية والاكسسوارات من أفضل العلامات التجارية',
     },
   ];
+
 
   @override
   Widget build(BuildContext context) {

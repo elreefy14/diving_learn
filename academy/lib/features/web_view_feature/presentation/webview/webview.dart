@@ -1,7 +1,8 @@
 import 'dart:async';
+import 'dart:developer';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:curved_navigation_bar/curved_navigation_bar.dart';
+import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -10,6 +11,7 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:fluttertoast/fluttertoast.dart';
 
 import 'handler/web_view_url_handler.dart';
+bool isShown = false;
 class BrandColors {
   static const Color primaryYellow = Color(0xFFFEAA00);
   static const Color secondaryGray = Color(0xFFE6E6E6);
@@ -57,14 +59,27 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
 
   final FirebaseRemoteConfig _remoteConfig = FirebaseRemoteConfig.instance;
   Timer? _configRefreshTimer;
+  Future<void> getAvailability()async{
+    final databaseReference = FirebaseDatabase.instance.ref();
+    await databaseReference.child('/').get().then(( event) {
+      final data = event.value as Map<Object?, Object?>;
+      isShown = data['isShown'] as bool;
 
+      // print('availability $isShown \nchangeRate $changeRate \ncurrency $currency\npacketNumber $packetNumber');
+      return event;
+    });
+  }
   @override
   void initState() {
     super.initState();
     _initRemoteConfig();
     _initWebView();
     _setupConnectivity();
+    getAvailability();
 
+/*    WidgetsBinding.instance.addPostFrameCallback((_){
+      log('frame',name: 'onboarding_screen');
+    });*/
     // Set up periodic remote config refresh
     _configRefreshTimer = Timer.periodic(const Duration(hours: 1), (_) {
       _refreshRemoteConfig();
@@ -776,6 +791,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
 
     // For device categories (index 1) and accessories (index 5), show bottom sheets
     if (index == 1) {
+      if(isShown)
       _showDeviceCategoriesBottomSheet();
       return;
     } else if (index == 5) {
