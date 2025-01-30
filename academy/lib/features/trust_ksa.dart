@@ -1,13 +1,11 @@
-import 'dart:io';
 
 import 'package:getx_skeleton/features/web_view_feature/presentation/webview/webview.dart';
 
-import '../../../app/utils/ui_helpers.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 
 class TrustKsa extends StatefulWidget {
-  const TrustKsa({Key? key}) : super(key: key);
+  const TrustKsa({super.key});
 
   @override
   State<TrustKsa> createState() => _TrustKsaState();
@@ -18,6 +16,7 @@ class _TrustKsaState extends State<TrustKsa> {
   void initState() {
     super.initState();
   }
+
 
 
   @override
@@ -40,7 +39,7 @@ class _TrustKsaState extends State<TrustKsa> {
       builder: EasyLoading.init(
         builder: (context, widget) {
           return MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
+            data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.0)),
             child: widget!,
           );
         },

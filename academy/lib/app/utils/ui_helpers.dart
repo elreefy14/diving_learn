@@ -26,7 +26,7 @@ class UIHelpers {
   static void _initLoader() {
     EasyLoading.instance
       ..loadingStyle = EasyLoadingStyle.light
-      ..backgroundColor = Color(0xff003049)
+      ..backgroundColor = const Color(0xff003049)
       ..indicatorSize = 45.0
       ..radius = 20.0
       ..maskType = EasyLoadingMaskType.custom
@@ -34,7 +34,7 @@ class UIHelpers {
       ..indicatorColor = Colors.yellow
       ..textColor = Colors.yellow
     // ..boxShadow = <BoxShadow>[]
-      ..maskColor = Colors.black.withOpacity(0.5) // semi-transparent black color
+      ..maskColor = Colors.black.withValues(alpha: 0.5) // semi-transparent black color
       ..userInteractions = false
       ..progressColor  = Colors.red
       ..dismissOnTap = false;

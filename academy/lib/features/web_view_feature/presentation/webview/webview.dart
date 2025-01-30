@@ -1,11 +1,12 @@
 import 'dart:async';
-import 'dart:developer';
 
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:firebase_database/firebase_database.dart';
 import 'package:firebase_remote_config/firebase_remote_config.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:getx_skeleton/app/utils/connectionstatuslistener.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fluttertoast/fluttertoast.dart';
@@ -34,26 +35,27 @@ class DeviceCategory {
 }
 
 class TrustKsaWebView extends StatefulWidget {
-  const TrustKsaWebView({Key? key}) : super(key: key);
+  const TrustKsaWebView({super.key});
 
   @override
+  // ignore: library_private_types_in_public_api
   _TrustKsaWebViewState createState() => _TrustKsaWebViewState();
 }
 class _TrustKsaWebViewState extends State<TrustKsaWebView> {
   InAppWebViewController? _webViewController;
   bool _isLoading = true;
   bool _isInitialLoad = true;
-  bool _isCssInjected = false;
+  //bool _isCssInjected = false;
   bool _isContentReady = false;
-  int _cartCount = 0;
+  //final int _cartCount = 0;
   final CacheManager _cacheManager = CacheManager();
-  bool _isShowingNoConnection = false;
+  //final bool _isShowingNoConnection = false;
   final Connectivity _connectivity = Connectivity();
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
   double _progress = 0;
-  bool _isNavigating = false;
+  //bool _isNavigating = false;
   Timer? _navigationDebouncer;
-  String _currentUrl = '';
+  //String _currentUrl = '';
   int _currentIndex = 0;
   bool _showPhonesTab = false;
 
@@ -176,17 +178,10 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     return items;
   }
 
-  // Your existing URL lists and category definitions remain the same
-
-
-  // Keep your existing category lists and other properties
-
-
-
-
 
   @override
   Widget build(BuildContext context) {
+    // ignore: deprecated_member_use
     return WillPopScope(
       onWillPop: () async {
         if (await _webViewController!.canGoBack()) {
@@ -210,7 +205,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                       'Accept-Encoding': 'gzip, deflate',
                     },
                   ),
-                  initialOptions: _options,
+                  initialSettings: _options,
                   onWebViewCreated: (InAppWebViewController controller) async {
                     _webViewController = controller;
                     controller.addJavaScriptHandler(
@@ -228,7 +223,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                       _isLoading = true;
                       _progress = 0;
                       _isContentReady = false;
-                      _isCssInjected = false;
+                    //  _isCssInjected = false;
                     });
                   },
                   onProgressChanged: _onProgressChanged,
@@ -239,7 +234,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                     Future.delayed(const Duration(milliseconds: 500), () {
                       if (mounted) {
                         setState(() {
-                          _isCssInjected = true;
+                          //_isCssInjected = true;
                           _isContentReady = true;
                           _isInitialLoad = false;
                           _isLoading = false;
@@ -247,7 +242,11 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                       }
                     });
                   },
-                  onLoadError: _onLoadError,
+                  onReceivedError: (controller, request, error) {
+                       debugPrint('WebView Error: Code: ${error.type}, Message: ${error.description}, URL: ${request.url}');
+                          if (mounted) setState(() => _isLoading = false);
+                  },
+                 // onLoadError: _onLoadError,
                   onLoadResource: (controller, resource) async {
                     final url = resource.url.toString();
                     if (_CacheableResource.isCacheable(url)) {
@@ -256,7 +255,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                         final content = await controller.evaluateJavascript(
                             source: '''
                             (function() {
-                              const element = document.querySelector('[src="${url}"]');
+                              const element = document.querySelector('[src="$url"]');
                               return element ? element.outerHTML : null;
                             })()
                           '''
@@ -338,10 +337,26 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     );
   }
 
-  // Add this method to verify CSS injection
-  Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
+Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
     try {
       const String customCSS = '''
+    /* Explicitly show Slideshow */
+    .slideshow,
+    .slideshow-wrapper,
+    [class*="slideshow"],
+    [data-section-type="slideshow"],
+    .shopify-section-slideshow,
+    .slideshow-section,
+    [class*="slideshow_"] {
+      display: block !important;
+      visibility: visible !important;
+      opacity: 1 !important;
+      height: auto !important;
+      min-height: auto !important;
+      overflow: visible !important;
+      pointer-events: auto !important;
+    }
+
     /* Hide footer */
     footer,
     .footer,
@@ -462,7 +477,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     .ribbon_banner_JefMbE,
     .ribbon_banner_zkP4Bb,
     .announcement-bar,
-    [class*="banner-"],
+    [class*="banner-"]:not([class*="slideshow"]),
     [class*="ribbon-"],
     .promotional-banner,
     [data-section-type*="ribbon"],
@@ -486,53 +501,71 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       margin-top: 0 !important;
     }
 
-    /* Hide related spacing elements */
-    [class*="spacer_"],
-    .spacer,
-    .divider,
-    [class*="section-spacing"] {
+    /* Hide related spacing elements except for slideshow */
+    [class*="spacer_"]:not([class*="slideshow"]),
+    .spacer:not(.slideshow-spacer),
+    .divider:not(.slideshow-divider),
+    [class*="section-spacing"]:not([class*="slideshow"]) {
       display: none !important;
     }
 
-    /* Fix any remaining spacing issues */
-    .section-content {
+    /* Fix any remaining spacing issues while preserving slideshow */
+    .section-content:not(.slideshow-content) {
       margin-top: 0 !important;
       padding-top: 0 !important;
     }
 
-    /* Hide any section wrappers that might contain tabs or banners */
-    [class*="section-wrapper"],
-    [class*="section-container"],
-    [class*="split-wrapper"],
-    [class*="split-container"] {
-      margin-top: 0 !important;
-      padding-top: 0 !important;
+    /* Preserve slideshow spacing */
+    .slideshow-section,
+    .slideshow-wrapper,
+    .slideshow-container {
+      margin: 0 !important;
+      padding: 0 !important;
+      height: auto !important;
+      min-height: auto !important;
+      display: block !important;
     }
     ''';
 
       // Inject the CSS
       await controller.injectCSSCode(source: customCSS);
 
-      // Verify CSS injection
+      // Verify CSS injection with updated selectors including slideshow check
       final verified = await controller.evaluateJavascript(source: '''
-      (function() {
-        const selectors = [
-          '.footer',
-          '.section-tabs',
-          '.ribbon-banner',
-          '.collection-banner',
-          '.stats',
-          '.newsletter',
-          '.icons-with-text'
-        ];
-        
-        const hiddenElements = document.querySelectorAll(selectors.join(','));
-        return hiddenElements.length > 0 && 
-               Array.from(hiddenElements).every(el => 
-                 window.getComputedStyle(el).display === 'none' ||
-                 window.getComputedStyle(el).visibility === 'hidden'
-               );
-      })()
+    (function() {
+      const selectorsToHide = [
+        '.footer',
+        '.section-tabs',
+        '.ribbon-banner',
+        '.collection-banner',
+        '.stats',
+        '.newsletter',
+        '.icons-with-text'
+      ];
+      
+      const selectorsToShow = [
+        '.slideshow',
+        '[class*="slideshow"]',
+        '[data-section-type="slideshow"]'
+      ];
+      
+      const hiddenElements = document.querySelectorAll(selectorsToHide.join(','));
+      const slideshowElements = document.querySelectorAll(selectorsToShow.join(','));
+      
+      const areElementsHidden = hiddenElements.length > 0 && 
+             Array.from(hiddenElements).every(el => 
+               window.getComputedStyle(el).display === 'none' ||
+               window.getComputedStyle(el).visibility === 'hidden'
+             );
+             
+      const isSlideshowVisible = slideshowElements.length === 0 || 
+             Array.from(slideshowElements).every(el =>
+               window.getComputedStyle(el).display !== 'none' &&
+               window.getComputedStyle(el).visibility !== 'hidden'
+             );
+             
+      return areElementsHidden && isSlideshowVisible;
+    })()
     ''');
       return verified == true;
     } catch (e) {
@@ -540,6 +573,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       return false;
     }
   }
+  
   void _onProgressChanged(InAppWebViewController controller, int progress) {
     if (!mounted) return;
 
@@ -602,12 +636,13 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     ),
   ];
 
-  Future<void> _checkInitialConnectivity() async {
-    final result = await _connectivity.checkConnectivity();
-    if (result == ConnectivityResult.none) {
-      if (mounted) _showNoInternetDialog();
-    }
-  }
+
+  // Future<void> _checkInitialConnectivity() async {
+  //   final result = await _connectivity.checkConnectivity();
+  //   if (result[0] == ConnectivityResult.none) {
+  //     if (mounted) _showNoInternetDialog();
+  //   }
+  // }
 
 
 
@@ -618,7 +653,8 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
         builder: (context) => NoConnectionScreen(
           onRetry: () async {
             var connectivityResult = await _connectivity.checkConnectivity();
-            if (connectivityResult != ConnectivityResult.none) {
+            if (connectivityResult[0] != ConnectivityResult.none) {
+              // ignore: use_build_context_synchronously
               Navigator.of(context).pop();
               await _reloadWebView();
             } else {
@@ -637,13 +673,28 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       textColor: Colors.white,
       toastLength: Toast.LENGTH_LONG,
       gravity: ToastGravity.BOTTOM,
+      timeInSecForIosWeb: 5,
     );
   }
 
-  Future<void> _updateConnectionStatus(ConnectivityResult result) async {
-    if (!mounted) return;
+  // Future<void> _updateConnectionStatus(ConnectivityResult result) async {
+  //   if (!mounted) return;
 
-    if (result == ConnectivityResult.none) {
+  //   if (result == ConnectivityResult.none) {
+  //     _showNoInternetDialog();
+  //   } else {
+  //     if (Navigator.canPop(context)) {
+  //       Navigator.of(context).pop();
+  //     }
+  //     await _reloadWebView();
+  //   }
+  // }
+
+  _updateConnectionStatus(dynamic hasConnection,ConnectionStatusListener connectionStatus) async {
+
+        if (!mounted) return;
+
+    if (!hasConnection) {
       _showNoInternetDialog();
     } else {
       if (Navigator.canPop(context)) {
@@ -651,7 +702,10 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       }
       await _reloadWebView();
     }
-  }
+
+
+
+}
 
   Future<void> _reloadWebView() async {
     try {
@@ -742,43 +796,43 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       ),
     );
   }
-  _handleNavigation(String newUrl) async {
-    if (newUrl.isEmpty || newUrl == _currentUrl) return;
+  // _handleNavigation(String newUrl) async {
+  //   if (newUrl.isEmpty || newUrl == _currentUrl) return;
 
-    try {
-      // Cancel any pending navigation
-      _navigationDebouncer?.cancel();
+  //   try {
+  //     // Cancel any pending navigation
+  //     _navigationDebouncer?.cancel();
 
-      setState(() {
-        _isLoading = true;
-        _progress = 0;
-        _isNavigating = true;
-      });
+  //     setState(() {
+  //       _isLoading = true;
+  //       _progress = 0;
+  //      // _isNavigating = true;
+  //     });
 
-      // Clear current page if any
-      await _webViewController?.stopLoading();
+  //     // Clear current page if any
+  //     await _webViewController?.stopLoading();
 
-      // Load new URL
-      await _webViewController?.loadUrl(
-        urlRequest: URLRequest(
-          url: WebUri.uri(Uri.parse(newUrl)),
-          headers: {
-            'Cache-Control': 'max-age=3600',
-            'Accept': 'text/html,application/json',
-            'Accept-Encoding': 'gzip, deflate',
-          },
-        ),
-      );
+  //     // Load new URL
+  //     await _webViewController?.loadUrl(
+  //       urlRequest: URLRequest(
+  //         url: WebUri.uri(Uri.parse(newUrl)),
+  //         headers: {
+  //           'Cache-Control': 'max-age=3600',
+  //           'Accept': 'text/html,application/json',
+  //           'Accept-Encoding': 'gzip, deflate',
+  //         },
+  //       ),
+  //     );
 
-      _currentUrl = newUrl; // Update the current URL
-    } catch (e) {
-      debugPrint('Error during navigation: $e');
-      setState(() {
-        _isLoading = false;
-        _isNavigating = false;
-      });
-    }
-  }
+  //     _currentUrl = newUrl; // Update the current URL
+  //   } catch (e) {
+  //     debugPrint('Error during navigation: $e');
+  //     setState(() {
+  //       _isLoading = false;
+  //       //_isNavigating = false;
+  //     });
+  //   }
+  // }
 
 // Update bottom navigation handler
 
@@ -791,8 +845,9 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
 
     // For device categories (index 1) and accessories (index 5), show bottom sheets
     if (index == 1) {
-      if(isShown)
-      _showDeviceCategoriesBottomSheet();
+      if(isShown) {
+        _showDeviceCategoriesBottomSheet();
+      }
       return;
     } else if (index == 5) {
       _showAccessoriesBottomSheet();
@@ -829,7 +884,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
 
         // Update current URL
         setState(() {
-          _currentUrl = targetUrl;
+         // _currentUrl = targetUrl;
           _isLoading = true;
           _progress = 0;
         });
@@ -846,14 +901,15 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
           textColor: Colors.white,
           toastLength: Toast.LENGTH_SHORT,
           gravity: ToastGravity.BOTTOM,
+          timeInSecForIosWeb: 5,
         );
       }
     }
   }
 
 
-  late final InAppWebViewGroupOptions _options = InAppWebViewGroupOptions(
-    crossPlatform: InAppWebViewOptions(
+  late final InAppWebViewSettings _options = InAppWebViewSettings(
+   
       useShouldOverrideUrlLoading: true,
       mediaPlaybackRequiresUserGesture: false,
       cacheEnabled: true,
@@ -869,13 +925,13 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       // Reduce memory usage
       incognito: false,
       supportZoom: false,
-    ),
-    android: AndroidInAppWebViewOptions(
+    
+    // android: AndroidInAppWebViewOptions(
       useHybridComposition: true,
-      mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+      //mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
       safeBrowsingEnabled: false,
       // Cache optimization
-      cacheMode: AndroidCacheMode.LOAD_CACHE_ELSE_NETWORK,
+      //cacheMode: AndroidCacheMode.LOAD_CACHE_ELSE_NETWORK,
       allowContentAccess: true,
       allowFileAccess: true,
       // Database optimization
@@ -886,8 +942,8 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       useWideViewPort: true,
       // Performance optimization
       hardwareAcceleration: true,
-    ),
-    ios: IOSInAppWebViewOptions(
+    // ),
+    // ios: IOSInAppWebViewOptions(
       allowsInlineMediaPlayback: true,
       allowsBackForwardNavigationGestures: true,
       // Cache optimization
@@ -895,7 +951,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       // Performance optimization
       isFraudulentWebsiteWarningEnabled: false,
       //isPrefetchingEnabled: true,
-    ),
+    // ),
   );
 
 
@@ -1012,7 +1068,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       );
 
       setState(() {
-        _currentUrl = url;
+       // _currentUrl = url;
         _isLoading = true;
         _progress = 0;
       });
@@ -1029,6 +1085,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
         textColor: Colors.white,
         toastLength: Toast.LENGTH_SHORT,
         gravity: ToastGravity.BOTTOM,
+        timeInSecForIosWeb: 5,
       );
     }
   }
@@ -1037,15 +1094,32 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
 
 
   void _initWebView() async {
+    
     //if (Platform.isAndroid) {
-    await AndroidInAppWebViewController.setWebContentsDebuggingEnabled(false);
+    if(!kDebugMode) {
+      await InAppWebViewController.setWebContentsDebuggingEnabled(false);
+    }
     // }
   }
 
-  void _setupConnectivity() {
-    _connectivitySubscription =
-        _connectivity.onConnectivityChanged.listen(_updateConnectionStatus);
-    _checkInitialConnectivity();
+  Future<void> _setupConnectivity() async {
+  //  _connectivitySubscription =
+  //      _connectivity.onConnectivityChanged.listen(_updateConnectionStatus as void Function(List<ConnectivityResult> event)?) as StreamSubscription<ConnectivityResult>;
+  //  _checkInitialConnectivity();
+    var connectionStatus = ConnectionStatusListener.getInstance();
+  await connectionStatus.initialize();
+  
+  //We are checking initial status here. This will handle our app state when
+  //it is started in no internet state.
+  if (!connectionStatus.hasConnection) {
+    _updateConnectionStatus(false, connectionStatus);
+  }
+
+  //This callback will give us any changes in network
+  connectionStatus.connectionChange.listen((event) {
+  //  print("initNoInternetListener $event");
+    _updateConnectionStatus(event, connectionStatus);
+  });
   }
 
 
@@ -1078,15 +1152,15 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       ''';
 
   // Update onLoadStart for better state management
-  void _onLoadStart(InAppWebViewController controller, Uri? url) {
-    if (mounted) {
-      setState(() {
-        _isLoading = true;
-        _progress = 0;
-      });
-      //  _injectRemovalScript(controller);
-    }
-  }
+  // void _onLoadStart(InAppWebViewController controller, Uri? url) {
+  //   if (mounted) {
+  //     setState(() {
+  //       _isLoading = true;
+  //       _progress = 0;
+  //     });
+  //     //  _injectRemovalScript(controller);
+  //   }
+  // }
 
 
 
@@ -1202,6 +1276,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
           url.startsWith('snssdk1233://') ||  // TikTok app scheme
           url.startsWith('tiktoken://')||       // Alternative TikTok app scheme
           url.startsWith('tiktok://')) {
+            
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else {
@@ -1224,6 +1299,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
       gravity: ToastGravity.BOTTOM,
       backgroundColor: Colors.red,
       textColor: Colors.white,
+      timeInSecForIosWeb: 5,
     );
   }
 
@@ -1233,70 +1309,70 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
 
 
 
-  void _onLoadError(InAppWebViewController controller, Uri? url, int code,
-      String message) {
-    debugPrint('WebView Error: Code: $code, Message: $message, URL: $url');
-    if (mounted) setState(() => _isLoading = false);
-  }
+  // void _onLoadError(InAppWebViewController controller, Uri? url, int code,
+  //     String message) {
+  //   debugPrint('WebView Error: Code: $code, Message: $message, URL: $url');
+  //   if (mounted) setState(() => _isLoading = false);
+  // }
 
-  Future<PermissionRequestResponse> _handleAndroidPermissionRequest(
-      InAppWebViewController controller,
-      String origin,
-      List<String> resources,) async {
-    return PermissionRequestResponse(
-      resources: resources,
-      action: PermissionRequestResponseAction.GRANT,
-    );
-  }
+  // Future<PermissionResponse> _handleAndroidPermissionRequest(
+  //     InAppWebViewController controller,
+  //     String origin,
+  //     PermissionResourceType resources,) async {
+  //   return PermissionResponse(
+  //     resources: [resources],
+  //     action: PermissionResponseAction.GRANT,
+  //   );
+  // }
 
 
   // Add search dialog implementation
-  Future<void> _showSearchDialog(BuildContext context) async {
-    final TextEditingController searchController = TextEditingController();
+  // Future<void> _showSearchDialog(BuildContext context) async {
+  //   final TextEditingController searchController = TextEditingController();
 
-    return showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        title: Text('بحث', style: TextStyle(color: Color(0xFFFEAA00))),
-        content: TextField(
-          controller: searchController,
-          autofocus: true,
-          decoration: InputDecoration(
-            hintText: 'ابحث عن منتج...',
-            hintStyle: TextStyle(color: Colors.grey),
-            enabledBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: Color(0xFFFEAA00)),
-            ),
-            focusedBorder: UnderlineInputBorder(
-              borderSide: BorderSide(color: Color(0xFFFEAA00), width: 2),
-            ),
-          ),
-          onSubmitted: (value) {
-            Navigator.pop(context);
-            if (value.isNotEmpty) {
-              _loadUrl('https://jifirephone.com/search?options%5Bprefix%5D=last&q=${Uri.encodeComponent(value)}');
-            }
-          },
-        ),
-        actions: [
-          TextButton(
-            child: Text('إلغاء', style: TextStyle(color: Colors.grey)),
-            onPressed: () => Navigator.pop(context),
-          ),
-          TextButton(
-            child: Text('بحث', style: TextStyle(color: Color(0xFFFEAA00))),
-            onPressed: () {
-              Navigator.pop(context);
-              if (searchController.text.isNotEmpty) {
-                _loadUrl('https://jifirephone.com/search?options%5Bprefix%5D=last&q=${Uri.encodeComponent(searchController.text)}');
-              }
-            },
-          ),
-        ],
-      ),
-    );
-  }
+  //   return showDialog(
+  //     context: context,
+  //     builder: (context) => AlertDialog(
+  //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
+  //       title: const Text('بحث', style: TextStyle(color: Color(0xFFFEAA00))),
+  //       content: TextField(
+  //         controller: searchController,
+  //         autofocus: true,
+  //         decoration: const InputDecoration(
+  //           hintText: 'ابحث عن منتج...',
+  //           hintStyle: TextStyle(color: Colors.grey),
+  //           enabledBorder: UnderlineInputBorder(
+  //             borderSide: BorderSide(color: Color(0xFFFEAA00)),
+  //           ),
+  //           focusedBorder: UnderlineInputBorder(
+  //             borderSide: BorderSide(color: Color(0xFFFEAA00), width: 2),
+  //           ),
+  //         ),
+  //         onSubmitted: (value) {
+  //           Navigator.pop(context);
+  //           if (value.isNotEmpty) {
+  //             _loadUrl('https://jifirephone.com/search?options%5Bprefix%5D=last&q=${Uri.encodeComponent(value)}');
+  //           }
+  //         },
+  //       ),
+  //       actions: [
+  //         TextButton(
+  //           child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
+  //           onPressed: () => Navigator.pop(context),
+  //         ),
+  //         TextButton(
+  //           child: const Text('بحث', style: TextStyle(color: Color(0xFFFEAA00))),
+  //           onPressed: () {
+  //             Navigator.pop(context);
+  //             if (searchController.text.isNotEmpty) {
+  //               _loadUrl('https://jifirephone.com/search?options%5Bprefix%5D=last&q=${Uri.encodeComponent(searchController.text)}');
+  //             }
+  //           },
+  //         ),
+  //       ],
+  //     ),
+  //   );
+  // }
 
 }
 
@@ -1304,7 +1380,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
 class NoConnectionScreen extends StatelessWidget {
   final VoidCallback onRetry;
 
-  const NoConnectionScreen({Key? key, required this.onRetry}) : super(key: key);
+  const NoConnectionScreen({super.key, required this.onRetry});
 
   // Brand colors
   static const Color primaryYellow = Color(0xFFFEAA00);
@@ -1323,7 +1399,7 @@ class NoConnectionScreen extends StatelessWidget {
             end: Alignment.bottomCenter,
             colors: [
               Colors.white,
-              secondaryGray.withOpacity(0.3),
+              secondaryGray.withValues(alpha: 0.3),
             ],
           ),
         ),
@@ -1339,7 +1415,7 @@ class NoConnectionScreen extends StatelessWidget {
                   color: Colors.white,
                   boxShadow: [
                     BoxShadow(
-                      color: primaryYellow.withOpacity(0.2),
+                      color: primaryYellow.withValues(alpha: 0.2),
                       blurRadius: 20,
                       spreadRadius: 5,
                     ),
@@ -1355,7 +1431,7 @@ class NoConnectionScreen extends StatelessWidget {
               const SizedBox(height: 40),
 
               // Main error message
-              Text(
+              const Text(
                 'لا يوجد اتصال بالإنترنت',
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -1376,7 +1452,7 @@ class NoConnectionScreen extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 16,
-                    color: darkGray.withOpacity(0.7),
+                    color: darkGray.withValues(alpha: 0.7),
                     height: 1.6,
                   ),
                 ),
@@ -1399,9 +1475,9 @@ class NoConnectionScreen extends StatelessWidget {
                         borderRadius: BorderRadius.circular(16),
                       ),
                     ),
-                    child: Row(
+                    child: const Row(
                       mainAxisAlignment: MainAxisAlignment.center,
-                      children: const [
+                      children: [
                         Icon(
                           Icons.refresh_rounded,
                           color: Colors.white,
@@ -1432,7 +1508,7 @@ class NoConnectionScreen extends StatelessWidget {
                   child: Text(
                     'تحتاج مساعدة؟',
                     style: TextStyle(
-                      color: darkGray.withOpacity(0.7),
+                      color: darkGray.withValues(alpha: 0.7),
                       fontSize: 16,
                     ),
                   ),

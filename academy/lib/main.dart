@@ -1,9 +1,7 @@
 // First, create a new file onboarding_screen.dart:
-
-import 'dart:developer';
-
+import 'package:awesome_notifications/awesome_notifications.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:firebase_database/firebase_database.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_easyloading/flutter_easyloading.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,7 +11,7 @@ import 'features/web_view_feature/presentation/webview/webview.dart';
 import 'firebase_options.dart';
 
 class OnboardingScreen extends StatefulWidget {
-  const OnboardingScreen({Key? key}) : super(key: key);
+  const OnboardingScreen({super.key});
 
   @override
   State<OnboardingScreen> createState() => _OnboardingScreenState();
@@ -54,7 +52,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                 end: Alignment.bottomCenter,
                 colors: [
                   Colors.white,
-                  secondaryGray.withOpacity(0.3),
+                  secondaryGray.withValues(alpha:  0.3),
                 ],
               ),
             ),
@@ -79,7 +77,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                         color: Colors.white,
                         boxShadow: [
                           BoxShadow(
-                            color: primaryYellow.withOpacity(0.2),
+                            color: primaryYellow.withValues(alpha: 0.2),
                             blurRadius: 20,
                             spreadRadius: 5,
                           ),
@@ -97,7 +95,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                     Text(
                       _pages[index]['title']!,
                       textAlign: TextAlign.center,
-                      style: TextStyle(
+                      style: const TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
                         color: darkGray,
@@ -112,7 +110,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         fontSize: 16,
-                        color: darkGray.withOpacity(0.7),
+                        color: darkGray.withValues(alpha: 0.7),
                         height: 1.6,
                       ),
                     ),
@@ -209,7 +207,19 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
   }
 }
 
-// Update your main.dart:
+
+  Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+    debugPrint("FCMMessage");
+  // Handle background message
+  AwesomeNotifications().createNotification(
+    content: NotificationContent(
+      id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+      channelKey: 'basic_channel',
+      title: message.notification?.title,
+      body: message.notification?.body,
+    ),
+  );
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -217,6 +227,23 @@ void main() async {
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
+   await Future.delayed(Duration(seconds: 1));
+    AwesomeNotifications().initialize(
+    null, // Set to null to use default icon
+    [
+      NotificationChannel(
+        channelKey: 'basic_channel',
+        channelName: 'Basic Notifications',
+        channelDescription: 'Notification channel for basic tests',
+        defaultColor: const Color(0xFF9D50DD),
+        ledColor: Colors.white,
+        importance: NotificationImportance.High,
+      ),
+    ],
+  );
+
+  // Set up FCM background message handler
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   final prefs = await SharedPreferences.getInstance();
   final showOnboarding = prefs.getBool('onboarding_complete')??true;
@@ -225,15 +252,64 @@ void main() async {
   runApp(TrustKsa(showOnboarding: showOnboarding));
 }
 
+
+
+  Future<void> setupNotifications() async {
+    // Request permission for notifications
+    FirebaseMessaging messaging = FirebaseMessaging.instance;
+    NotificationSettings settings = await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+
+    if (settings.authorizationStatus == AuthorizationStatus.authorized) {
+      debugPrint('User granted permission');
+    } else {
+      debugPrint('User declined or has not granted permission');
+    }
+
+    // Get FCM token for debugging (optional)
+    String? token = await messaging.getToken();
+    debugPrint("FCM Token: $token");
+
+    // Handle foreground notifications
+    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
+      debugPrint("FCMMessage");
+      AwesomeNotifications().createNotification(
+        content: NotificationContent(
+          id: DateTime.now().millisecondsSinceEpoch.remainder(100000),
+          channelKey: 'basic_channel',
+          title: message.notification?.title,
+          body: message.notification?.body,
+        ),
+      );
+    });
+  }
+  
+
 // Update your TrustKsa class:
 
-class TrustKsa extends StatelessWidget {
+class TrustKsa extends StatefulWidget {
   final bool showOnboarding;
 
-  const TrustKsa({Key? key, this.showOnboarding = true}) : super(key: key);
+  const TrustKsa({super.key, this.showOnboarding = true});
+
+  @override
+  State<TrustKsa> createState() => _TrustKsaState();
+}
+
+class _TrustKsaState extends State<TrustKsa> {
+
+  @override
+  void initState(){
+    super.initState();
+    setupNotifications();
+  }
 
   @override
   Widget build(BuildContext context) {
+    
     return MaterialApp(
       title: 'جي فاير للموبايل',
       debugShowCheckedModeBanner: false,
@@ -244,12 +320,12 @@ class TrustKsa extends StatelessWidget {
       builder: EasyLoading.init(
         builder: (context, widget) {
           return MediaQuery(
-            data: MediaQuery.of(context).copyWith(textScaleFactor: 1.0),
+            data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.0)),
             child: widget!,
           );
         },
       ),
-      home: showOnboarding ? const OnboardingScreen() : const TrustKsaWebView(),
+      home: widget.showOnboarding ? const OnboardingScreen() : const TrustKsaWebView(),
     );
   }
 }

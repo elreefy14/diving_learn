@@ -10,8 +10,8 @@ class TrustKsaWebViewOptions {
   static final TrustKsaWebViewOptions _singleton =
       TrustKsaWebViewOptions._internal();
 
-  final  _options = InAppWebViewGroupOptions(
-    crossPlatform: InAppWebViewOptions(
+  final  _options = InAppWebViewSettings(
+    // crossPlatform: InAppWebViewOptions(
       useOnDownloadStart: true,
       useShouldOverrideUrlLoading: true,
       mediaPlaybackRequiresUserGesture: false,
@@ -27,27 +27,27 @@ class TrustKsaWebViewOptions {
       useShouldInterceptFetchRequest: true
       // disableHorizontalScroll: true,
       // clearCache: true,
-    ),
-    android: AndroidInAppWebViewOptions(
-      useHybridComposition: true,
-      disableDefaultErrorPage: true,
-      useShouldInterceptRequest: true,
-      mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+    //),
+    // android: AndroidInAppWebViewOptions(
+    //   useHybridComposition: true,
+    //   disableDefaultErrorPage: true,
+    //   useShouldInterceptRequest: true,
+    //   mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
 
-    ),
-    ios: IOSInAppWebViewOptions(
-        allowsInlineMediaPlayback: true,
-        alwaysBounceVertical: true,
-        disableInputAccessoryView: true,
-        automaticallyAdjustsScrollIndicatorInsets: true,
-        suppressesIncrementalRendering: true,
-        allowsLinkPreview: false,
-        useOnNavigationResponse: true,
-        sharedCookiesEnabled: true,
-        disableLongPressContextMenuOnLinks: true,
-        maximumZoomScale: 0.5,
-    ),
+    // ),
+    // ios: IOSInAppWebViewOptions(
+    //     allowsInlineMediaPlayback: true,
+    //     alwaysBounceVertical: true,
+    //     disableInputAccessoryView: true,
+    //     automaticallyAdjustsScrollIndicatorInsets: true,
+    //     suppressesIncrementalRendering: true,
+    //     allowsLinkPreview: false,
+    //     useOnNavigationResponse: true,
+    //     sharedCookiesEnabled: true,
+    //     disableLongPressContextMenuOnLinks: true,
+    //     maximumZoomScale: 0.5,
+    // ),
   );
-  InAppWebViewGroupOptions get options => _options;
+  InAppWebViewSettings get options => _options;
 
 }

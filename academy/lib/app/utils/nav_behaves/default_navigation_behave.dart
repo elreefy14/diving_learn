@@ -36,10 +36,10 @@ class DefaultNavigationBehave implements NavigationDelegateRepo {
   ];
 
   bool _checkIfUrlBlackListed(String url) {
-    print('Checking URL: $url');
+    debugPrint('Checking URL: $url');
     for (var blacklisted in blackListedUrls) {
       if (url.toLowerCase().startsWith(blacklisted.toLowerCase())) {
-        print('URL is blacklisted: $url matches $blacklisted');
+        debugPrint('URL is blacklisted: $url matches $blacklisted');
         return true;
       }
     }

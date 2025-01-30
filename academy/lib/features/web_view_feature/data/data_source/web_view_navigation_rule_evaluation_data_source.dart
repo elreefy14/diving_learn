@@ -31,11 +31,11 @@ class INavigationEvaluatorDataSourceImpl implements INavigationEvaluatorDataSour
     //
     //** Check if there is applicable rule */
     //
-    rules.forEach((rule) {
+    for (var rule in rules) {
       if (rule.isRuleApplicable(urlString)) {
         navigationActionPolicy = rule.executeNavigationRule(controller, navigationAction);
       }
-    });
+    }
 
     return navigationActionPolicy;
   }
