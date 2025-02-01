@@ -225,6 +225,7 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await init();
   await Firebase.initializeApp(
+    name: 'Gi',
     options: DefaultFirebaseOptions.currentPlatform,
   );
    await Future.delayed(Duration(seconds: 1));
