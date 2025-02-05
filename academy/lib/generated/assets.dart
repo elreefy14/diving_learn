@@ -11,7 +11,6 @@ class Assets {
   static const String imagesApp = 'assets/images/app.png';
   static const String imagesPerson1 = 'assets/images/person1.png';
   static const String imagesPerson2 = 'assets/images/person2.png';
-  static const String imagesPlayStore512 = 'assets/images/play_store_512.png';
   static const String imagesProfile = 'assets/images/profile.png';
   static const String vectorsAbsent = 'assets/vectors/absent.svg';
   static const String vectorsAlarm = 'assets/vectors/alarm.svg';

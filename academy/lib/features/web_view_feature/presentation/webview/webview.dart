@@ -1,91 +1,48 @@
 import 'dart:async';
-
+import 'dart:io';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'package:firebase_database/firebase_database.dart';
-import 'package:firebase_remote_config/firebase_remote_config.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-import 'package:getx_skeleton/app/utils/connectionstatuslistener.dart';
+import '../../../../app/utils/connectionstatuslistener.dart';
+import '../../../../app/utils/nointernet_page.dart';
+import '../../../../features/web_view_feature/presentation/webview/url_lists.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fluttertoast/fluttertoast.dart';
-
 import 'handler/web_view_url_handler.dart';
-bool isShown = false;
+
 class BrandColors {
   static const Color primaryYellow = Color(0xFFFEAA00);
   static const Color secondaryGray = Color(0xFFE6E6E6);
   static const Color darkGray = Color(0xFF333333);
 }
-class AccessoryCategory {
-  final String name;
-  final String url;
-  final IconData icon;
-
-  AccessoryCategory({required this.name, required this.url, required this.icon});
-}
-
-class DeviceCategory {
-  final String name;
-  final String url;
-  final IconData icon;
-
-  DeviceCategory({required this.name, required this.url, required this.icon});
-}
 
 class TrustKsaWebView extends StatefulWidget {
   const TrustKsaWebView({super.key});
-
   @override
   // ignore: library_private_types_in_public_api
   _TrustKsaWebViewState createState() => _TrustKsaWebViewState();
 }
+
 class _TrustKsaWebViewState extends State<TrustKsaWebView> {
   InAppWebViewController? _webViewController;
   bool _isLoading = true;
   bool _isInitialLoad = true;
-  //bool _isCssInjected = false;
   bool _isContentReady = false;
-  //final int _cartCount = 0;
   final CacheManager _cacheManager = CacheManager();
-  //final bool _isShowingNoConnection = false;
   final Connectivity _connectivity = Connectivity();
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
   double _progress = 0;
-  //bool _isNavigating = false;
   Timer? _navigationDebouncer;
-  //String _currentUrl = '';
   int _currentIndex = 0;
-  bool _showPhonesTab = false;
-
-  final FirebaseRemoteConfig _remoteConfig = FirebaseRemoteConfig.instance;
   Timer? _configRefreshTimer;
-  Future<void> getAvailability()async{
-    final databaseReference = FirebaseDatabase.instance.ref();
-    await databaseReference.child('/').get().then(( event) {
-      final data = event.value as Map<Object?, Object?>;
-      isShown = data['isShown'] as bool;
+  
 
-      // print('availability $isShown \nchangeRate $changeRate \ncurrency $currency\npacketNumber $packetNumber');
-      return event;
-    });
-  }
   @override
   void initState() {
     super.initState();
-    _initRemoteConfig();
     _initWebView();
     _setupConnectivity();
-    getAvailability();
-
-/*    WidgetsBinding.instance.addPostFrameCallback((_){
-      log('frame',name: 'onboarding_screen');
-    });*/
-    // Set up periodic remote config refresh
-    _configRefreshTimer = Timer.periodic(const Duration(hours: 1), (_) {
-      _refreshRemoteConfig();
-    });
   }
 
   @override
@@ -94,90 +51,101 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     _configRefreshTimer?.cancel();
     WebViewUrlHandler.setWebViewController(null);
     _connectivitySubscription.cancel();
+    _webViewController?.dispose();
     super.dispose();
   }
 
-  Future<void> _initRemoteConfig() async {
-    try {
-      await _remoteConfig.setConfigSettings(RemoteConfigSettings(
-        fetchTimeout: const Duration(minutes: 1),
-        minimumFetchInterval: const Duration(hours: 1),
-      ));
-
-      await _remoteConfig.fetchAndActivate();
-
-      setState(() {
-        _showPhonesTab = _remoteConfig.getBool('release');
-      });
-    } catch (e) {
-      debugPrint('Error initializing remote config: $e');
-      // Default to showing the phones tab if there's an error
-      setState(() {
-        _showPhonesTab = true;
-      });
+  void _initWebView() async {
+    if (Platform.isAndroid) {
+      await InAppWebViewController.setWebContentsDebuggingEnabled(false);
     }
   }
 
-  Future<void> _refreshRemoteConfig() async {
-    try {
-      bool updated = await _remoteConfig.fetchAndActivate();
-      if (updated) {
-        setState(() {
-          _showPhonesTab = _remoteConfig.getBool('release');
-        });
-      }
-    } catch (e) {
-      debugPrint('Error refreshing remote config: $e');
+  Future<void> _setupConnectivity() async {
+    var connectionStatus = ConnectionStatusListener.getInstance();
+    await connectionStatus.initialize();
+
+    if (!connectionStatus.hasConnection) {
+      _updateConnectionStatus(false, connectionStatus);
     }
+    connectionStatus.connectionChange.listen((event) {
+      _updateConnectionStatus(event, connectionStatus);
+    });
   }
 
-  final List<String> _urls = [
-    'https://jifirephone.com/',
-    '',
-    'https://jifirephone.com/collections/%D9%83%D8%A7%D9%85%D9%8A%D8%B1%D8%A7%D8%AA-%D9%85%D8%B1%D8%A7%D9%82%D8%A8%D8%A9',
-    'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%AD%D8%A7%D8%B3%D9%88%D8%A8',
-    'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D8%A7%D9%84%D8%B9%D8%A7%D8%A8-%D9%88%D8%AA%D8%B1%D9%81%D9%8A%D9%87',
-    '',
-  ];
 
+
+  late final InAppWebViewSettings _options = InAppWebViewSettings(
+    useShouldOverrideUrlLoading: true,
+    mediaPlaybackRequiresUserGesture: false,
+    cacheEnabled: true,
+    clearCache: false,
+    preferredContentMode: UserPreferredContentMode.MOBILE,
+    //allowsInlineMediaPlayback: true,
+    javaScriptEnabled: true,
+    transparentBackground: true,
+    // Resource optimization
+    resourceCustomSchemes: ['tel', 'mailto'],
+    minimumFontSize: 10,
+    useOnLoadResource: true,
+    // Reduce memory usage
+    incognito: false,
+    supportZoom: false,
+
+    // android: AndroidInAppWebViewOptions(
+    useHybridComposition: true,
+    //mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
+    safeBrowsingEnabled: false,
+    // Cache optimization
+    //cacheMode: AndroidCacheMode.LOAD_CACHE_ELSE_NETWORK,
+    allowContentAccess: true,
+    allowFileAccess: true,
+    // Database optimization
+    databaseEnabled: true,
+    domStorageEnabled: true,
+    // Layout optimization
+    loadWithOverviewMode: true,
+    useWideViewPort: true,
+    // Performance optimization
+    hardwareAcceleration: true,
+    // ),
+    // ios: IOSInAppWebViewOptions(
+    allowsInlineMediaPlayback: true,
+    allowsBackForwardNavigationGestures: true,
+    // Cache optimization
+    enableViewportScale: false,
+    // Performance optimization
+    isFraudulentWebsiteWarningEnabled: false,
+    //isPrefetchingEnabled: true,
+    // ),
+  );
 
   List<BottomNavigationBarItem> get _navigationItems {
     List<BottomNavigationBarItem> items = [
       const BottomNavigationBarItem(
         icon: Icon(Icons.home),
-        label: 'الرئيسية',
+        label: 'الرئيسيـة',
       ),
     ];
 
-    if (_showPhonesTab) {
-      items.add(const BottomNavigationBarItem(
-        icon: Icon(Icons.phone_iphone),
-        label: 'الهواتف',
-      ));
-    }
+    items.add(const BottomNavigationBarItem(
+      icon: Icon(Icons.phone_iphone),
+      label: 'الهواتـف',
+    ));
 
     items.addAll([
       const BottomNavigationBarItem(
-        icon: Icon(Icons.camera_alt),
-        label: 'الكاميرات',
-      ),
-      const BottomNavigationBarItem(
         icon: Icon(Icons.laptop),
-        label: 'اللابتوبات',
+        label: 'اللابتـوبات',
       ),
       const BottomNavigationBarItem(
-        icon: Icon(Icons.videogame_asset),
-        label: 'الألعاب',
-      ),
-      const BottomNavigationBarItem(
-        icon: Icon(Icons.headphones),
-        label: 'الإكسسوارات',
+        icon: Icon(Icons.important_devices),
+        label: 'منتجـات',
       ),
     ]);
 
     return items;
   }
-
 
   @override
   Widget build(BuildContext context) {
@@ -198,7 +166,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                 opacity: _isContentReady ? 1.0 : 0.0,
                 child: InAppWebView(
                   initialUrlRequest: URLRequest(
-                    url: WebUri.uri(Uri.parse(_urls[0])),
+                    url: WebUri.uri(Uri.parse(UrlLists().urls[0])),
                     headers: {
                       'Cache-Control': 'max-age=3600',
                       'Accept': 'text/html,application/json',
@@ -223,18 +191,17 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                       _isLoading = true;
                       _progress = 0;
                       _isContentReady = false;
-                    //  _isCssInjected = false;
                     });
                   },
                   onProgressChanged: _onProgressChanged,
                   onLoadStop: (controller, url) async {
-                    await controller.evaluateJavascript(source: _injectedScript);
+                    await controller.evaluateJavascript(
+                        source: _injectedScript);
                     await _injectCustomCSS(controller);
 
                     Future.delayed(const Duration(milliseconds: 500), () {
                       if (mounted) {
                         setState(() {
-                          //_isCssInjected = true;
                           _isContentReady = true;
                           _isInitialLoad = false;
                           _isLoading = false;
@@ -243,33 +210,35 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                     });
                   },
                   onReceivedError: (controller, request, error) {
-                       debugPrint('WebView Error: Code: ${error.type}, Message: ${error.description}, URL: ${request.url}');
-                          if (mounted) setState(() => _isLoading = false);
+                    debugPrint(
+                        'WebView Error: Code: ${error.type}, Message: ${error.description}, URL: ${request.url}');
+                    if (mounted) setState(() => _isLoading = false);
                   },
-                 // onLoadError: _onLoadError,
+                  // onLoadError: _onLoadError,
                   onLoadResource: (controller, resource) async {
                     final url = resource.url.toString();
                     if (_CacheableResource.isCacheable(url)) {
                       await _injectCustomCSS(controller);
                       try {
-                        final content = await controller.evaluateJavascript(
-                            source: '''
+                        final content =
+                            await controller.evaluateJavascript(source: '''
                             (function() {
                               const element = document.querySelector('[src="$url"]');
                               return element ? element.outerHTML : null;
                             })()
-                          '''
-                        );
+                          ''');
 
                         if (content != null) {
-                          await _cacheManager.cacheResource(url, content.toString());
+                          await _cacheManager.cacheResource(
+                              url, content.toString());
                         }
                       } catch (e) {
                         debugPrint('Error caching resource: $e');
                       }
                     }
                   },
-                  shouldOverrideUrlLoading: (controller, navigationAction) async {
+                  shouldOverrideUrlLoading:
+                      (controller, navigationAction) async {
                     final url = navigationAction.request.url?.toString() ?? '';
                     if (_shouldHandleExternally(url)) {
                       await _handleExternalUrl(url);
@@ -303,7 +272,8 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
                           LinearProgressIndicator(
                             value: _progress,
                             backgroundColor: Colors.grey[300],
-                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.blue),
+                            valueColor: const AlwaysStoppedAnimation<Color>(
+                                Colors.blue),
                           ),
                       ],
                     ),
@@ -337,7 +307,7 @@ class _TrustKsaWebViewState extends State<TrustKsaWebView> {
     );
   }
 
-Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
+  Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
     try {
       const String customCSS = '''
     /* Explicitly show Slideshow */
@@ -573,7 +543,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       return false;
     }
   }
-  
+
   void _onProgressChanged(InAppWebViewController controller, int progress) {
     if (!mounted) return;
 
@@ -583,66 +553,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
     });
   }
   // Optimize script injection timing
-  final List<AccessoryCategory> accessoryCategories = [
-    AccessoryCategory(
-      name: 'ساعات',
-      url: 'https://jifirephone.com/collections/%D8%B3%D8%A7%D8%B9%D8%A7%D8%AA',
-      icon: Icons.watch,
-    ),
-    AccessoryCategory(
-      name: 'سماعات وايربود',
-      url: 'https://jifirephone.com/collections/%D8%A7%D9%84%D8%B3%D9%85%D8%A7%D8%B9%D8%A7%D8%AA-%D8%A8%D9%84%D9%88%D8%AA%D9%88%D8%AB-%D9%88%D8%A7%D9%84%D8%A7%D9%8A%D8%B1%D8%A8%D9%88%D8%AF',
-      icon: Icons.headphones,
-    ),
-    //add item for accessories
-    //https://jifirephone.com/collections/%D8%A7%D9%83%D8%B3%D8%B3%D9%88%D8%A7%D8%B1%D8%A7%D8%AA
-    AccessoryCategory(
-      name: 'اكسسوارات',
-      url: 'https://jifirephone.com/collections/%D8%A7%D9%83%D8%B3%D8%B3%D9%88%D8%A7%D8%B1%D8%A7%D8%AA',
-      icon: Icons.add_business_outlined,
-    ),
-  ];
-
-  final List<DeviceCategory> deviceCategories = [
-    DeviceCategory(
-      name: 'ايفون',
-      url: 'https://jifirephone.com/collections/%D8%A7%D9%8A%D9%81%D9%88%D9%86',
-      icon: Icons.apple,
-    ),
-    DeviceCategory(
-      name: 'سامسونج',
-      url: 'https://jifirephone.com/collections/%D8%A7%D8%AC%D9%87%D8%B2%D8%A9-%D9%87%D9%88%D8%A7%D8%AA%D9%81-%D9%85%D8%AD%D9%85%D9%88%D9%84%D8%A9',
-      icon: Icons.phone_android,
-    ),
-    DeviceCategory(
-      name: 'ريلمي وشاومي',
-      url: 'https://jifirephone.com/collections/%D8%B1%D9%8A%D9%84%D9%85%D9%8A-%D8%B4%D8%A7%D9%88%D9%85%D9%8A',
-      icon: Icons.smartphone,
-    ),
-    DeviceCategory(
-      name: 'هونر',
-      url: 'https://jifirephone.com/collections/%D9%87%D9%88%D9%86%D8%B1',
-      icon: Icons.phone_android,
-    ),
-    DeviceCategory(
-      name: 'تابلت',
-      url: 'https://jifirephone.com/collections/%D8%AA%D8%A7%D8%A8%D8%A7%D8%AA',
-      icon: Icons.tablet_android,
-    ),
-    DeviceCategory(
-      name: 'تكنو وانفنكس',
-      url: 'https://jifirephone.com/collections/%D8%AA%D9%83%D9%86%D9%88-%D8%A7%D9%86%D9%81%D9%86%D9%83%D8%B3',
-      icon: Icons.phone_android,
-    ),
-  ];
-
-
-  // Future<void> _checkInitialConnectivity() async {
-  //   final result = await _connectivity.checkConnectivity();
-  //   if (result[0] == ConnectivityResult.none) {
-  //     if (mounted) _showNoInternetDialog();
-  //   }
-  // }
+ 
 
 
 
@@ -658,7 +569,15 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
               Navigator.of(context).pop();
               await _reloadWebView();
             } else {
-              _showNoInternetToast();
+              Fluttertoast.showToast(
+                msg:
+                    "لا يوجد اتصال بالإنترنت \n يرجى التحقق من اتصالك بالإنترنت",
+                backgroundColor: Colors.red,
+                textColor: Colors.white,
+                toastLength: Toast.LENGTH_LONG,
+                gravity: ToastGravity.BOTTOM,
+                timeInSecForIosWeb: 5,
+              );
             }
           },
         ),
@@ -666,34 +585,8 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
     );
   }
 
-  void _showNoInternetToast() {
-    Fluttertoast.showToast(
-      msg: "لا يوجد اتصال بالإنترنت \n يرجى التحقق من اتصالك بالإنترنت",
-      backgroundColor: Colors.red,
-      textColor: Colors.white,
-      toastLength: Toast.LENGTH_LONG,
-      gravity: ToastGravity.BOTTOM,
-      timeInSecForIosWeb: 5,
-    );
-  }
-
-  // Future<void> _updateConnectionStatus(ConnectivityResult result) async {
-  //   if (!mounted) return;
-
-  //   if (result == ConnectivityResult.none) {
-  //     _showNoInternetDialog();
-  //   } else {
-  //     if (Navigator.canPop(context)) {
-  //       Navigator.of(context).pop();
-  //     }
-  //     await _reloadWebView();
-  //   }
-  // }
-
-  _updateConnectionStatus(dynamic hasConnection,ConnectionStatusListener connectionStatus) async {
-
-        if (!mounted) return;
-
+  _updateConnectionStatus(dynamic hasConnection, ConnectionStatusListener connectionStatus) async {
+    if (!mounted) return;
     if (!hasConnection) {
       _showNoInternetDialog();
     } else {
@@ -702,10 +595,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       }
       await _reloadWebView();
     }
-
-
-
-}
+  }
 
   Future<void> _reloadWebView() async {
     try {
@@ -714,9 +604,179 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       debugPrint('Error reloading WebView: $e');
     }
   }
-  // URLs for different sections
 
   void _showAccessoriesBottomSheet() {
+  final isTablet = MediaQuery.of(context).size.width >= 768;
+  final screenHeight = MediaQuery.of(context).size.height;
+  final screenWidth = MediaQuery.of(context).size.width;
+
+  showModalBottomSheet(
+    context: context,
+    backgroundColor: Colors.white,
+    constraints: BoxConstraints(
+      maxHeight: screenHeight * 0.8,
+      maxWidth: isTablet ? screenWidth * 0.8 : screenWidth,
+    ),
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+    ),
+    builder: (context) => DefaultTabController(
+      length: 2,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const TabBar(
+            tabs: [
+              Tab(icon: Icon(Icons.headset), text: 'اكسسوارات'),
+              Tab(icon: Icon(Icons.devices), text: 'منتجات عالمية'),
+            ],
+            indicatorColor: Colors.blue,
+            labelColor: Colors.blue,
+            unselectedLabelColor: Colors.grey,
+          ),
+          Expanded(
+            child: TabBarView(
+              children: [
+                _accessoriesTab(),
+                _moreTab(),
+              ],
+            ),
+          ),
+        ],
+      ),
+    ),
+  );
+}
+
+Widget _accessoriesTab() {
+  final isTablet = MediaQuery.of(context).size.width >= 768;
+  final screenWidth = MediaQuery.of(context).size.width;
+  return SingleChildScrollView(
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              vertical: 20,
+              horizontal: isTablet ? 40 : 20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 20),
+                  child: Text(
+                    'اختر نوع الاكسسوار',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 20,
+                  runSpacing: 20,
+                  children: UrlLists().accessoryCategories.map((category) {
+                    final itemWidth =
+                        isTablet ? screenWidth * 0.2 : (screenWidth / 3) - 30;
+
+                    return InkWell(
+                      onTap: () {
+                        Navigator.pop(context);
+                        _loadUrl(category.url);
+                      },
+                      child: Container(
+                        width: itemWidth,
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          children: [
+                            Icon(
+                              category.icon,
+                              size: isTablet ? 48 : 32,
+                              color: Colors.blue,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              category.name,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: isTablet ? 16 : 14),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        );
+}
+
+
+Widget _moreTab() {
+  final isTablet = MediaQuery.of(context).size.width >= 768;
+  final screenWidth = MediaQuery.of(context).size.width;
+  return SingleChildScrollView(
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              vertical: 20,
+              horizontal: isTablet ? 40 : 20,
+            ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Padding(
+                  padding: EdgeInsets.only(bottom: 20),
+                  child: Text(
+                    'اختر نوع الاكسسوار',
+                    style: TextStyle(
+                      fontSize: 20,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                Wrap(
+                  alignment: WrapAlignment.center,
+                  spacing: 20,
+                  runSpacing: 20,
+                  children: UrlLists().moreCategories.map((category) {
+                    final itemWidth =
+                        isTablet ? screenWidth * 0.2 : (screenWidth / 3) - 30;
+
+                    return InkWell(
+                      onTap: () {
+                        Navigator.pop(context);
+                        _loadUrl(category.url);
+                      },
+                      child: Container(
+                        width: itemWidth,
+                        padding: const EdgeInsets.all(8),
+                        child: Column(
+                          children: [
+                            Icon(
+                              category.icon,
+                              size: isTablet ? 48 : 32,
+                              color: Colors.blue,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              category.name,
+                              textAlign: TextAlign.center,
+                              style: TextStyle(fontSize: isTablet ? 16 : 14),
+                            ),
+                          ],
+                        ),
+                      ),
+                    );
+                  }).toList(),
+                ),
+              ],
+            ),
+          ),
+        );
+}
+  // URLs for different sections
+  // ignore: unused_element
+  void _showAccessoriesBottomSheett() {
     final isTablet = MediaQuery.of(context).size.width >= 768;
     final screenHeight = MediaQuery.of(context).size.height;
     final screenWidth = MediaQuery.of(context).size.width;
@@ -755,10 +815,9 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
                   alignment: WrapAlignment.center,
                   spacing: 20,
                   runSpacing: 20,
-                  children: accessoryCategories.map((category) {
-                    final itemWidth = isTablet
-                        ? screenWidth * 0.2
-                        : (screenWidth / 3) - 30;
+                  children: UrlLists().accessoryCategories.map((category) {
+                    final itemWidth =
+                        isTablet ? screenWidth * 0.2 : (screenWidth / 3) - 30;
 
                     return InkWell(
                       onTap: () {
@@ -779,9 +838,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
                             Text(
                               category.name,
                               textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: isTablet ? 16 : 14
-                              ),
+                              style: TextStyle(fontSize: isTablet ? 16 : 14),
                             ),
                           ],
                         ),
@@ -796,47 +853,8 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       ),
     );
   }
-  // _handleNavigation(String newUrl) async {
-  //   if (newUrl.isEmpty || newUrl == _currentUrl) return;
-
-  //   try {
-  //     // Cancel any pending navigation
-  //     _navigationDebouncer?.cancel();
-
-  //     setState(() {
-  //       _isLoading = true;
-  //       _progress = 0;
-  //      // _isNavigating = true;
-  //     });
-
-  //     // Clear current page if any
-  //     await _webViewController?.stopLoading();
-
-  //     // Load new URL
-  //     await _webViewController?.loadUrl(
-  //       urlRequest: URLRequest(
-  //         url: WebUri.uri(Uri.parse(newUrl)),
-  //         headers: {
-  //           'Cache-Control': 'max-age=3600',
-  //           'Accept': 'text/html,application/json',
-  //           'Accept-Encoding': 'gzip, deflate',
-  //         },
-  //       ),
-  //     );
-
-  //     _currentUrl = newUrl; // Update the current URL
-  //   } catch (e) {
-  //     debugPrint('Error during navigation: $e');
-  //     setState(() {
-  //       _isLoading = false;
-  //       //_isNavigating = false;
-  //     });
-  //   }
-  // }
 
 // Update bottom navigation handler
-
-
   void _onBottomNavTapped(int index) async {
     // Always update the current index first
     setState(() {
@@ -845,17 +863,15 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
 
     // For device categories (index 1) and accessories (index 5), show bottom sheets
     if (index == 1) {
-      if(isShown) {
-        _showDeviceCategoriesBottomSheet();
-      }
+      _showDeviceCategoriesBottomSheet();
       return;
-    } else if (index == 5) {
+    } else if (index == 3) {
       _showAccessoriesBottomSheet();
       return;
     }
 
     // Force navigation to the new URL
-    final String targetUrl = _urls[index];
+    final String targetUrl = UrlLists().urls[index];
     if (targetUrl.isNotEmpty) {
       try {
         // Stop any current loading
@@ -871,7 +887,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
         // Force load new URL with cache headers
         await _webViewController?.loadUrl(
           urlRequest: URLRequest(
-            url:WebUri.uri(Uri.parse(targetUrl)) ,
+            url: WebUri.uri(Uri.parse(targetUrl)),
             headers: {
               'Cache-Control': 'no-cache, no-store, must-revalidate',
               'Pragma': 'no-cache',
@@ -884,7 +900,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
 
         // Update current URL
         setState(() {
-         // _currentUrl = targetUrl;
+          // _currentUrl = targetUrl;
           _isLoading = true;
           _progress = 0;
         });
@@ -906,55 +922,6 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       }
     }
   }
-
-
-  late final InAppWebViewSettings _options = InAppWebViewSettings(
-   
-      useShouldOverrideUrlLoading: true,
-      mediaPlaybackRequiresUserGesture: false,
-      cacheEnabled: true,
-      clearCache: false,
-      preferredContentMode: UserPreferredContentMode.MOBILE,
-      //allowsInlineMediaPlayback: true,
-      javaScriptEnabled: true,
-      transparentBackground: true,
-      // Resource optimization
-      resourceCustomSchemes: ['tel', 'mailto'],
-      minimumFontSize: 10,
-      useOnLoadResource: true,
-      // Reduce memory usage
-      incognito: false,
-      supportZoom: false,
-    
-    // android: AndroidInAppWebViewOptions(
-      useHybridComposition: true,
-      //mixedContentMode: AndroidMixedContentMode.MIXED_CONTENT_ALWAYS_ALLOW,
-      safeBrowsingEnabled: false,
-      // Cache optimization
-      //cacheMode: AndroidCacheMode.LOAD_CACHE_ELSE_NETWORK,
-      allowContentAccess: true,
-      allowFileAccess: true,
-      // Database optimization
-      databaseEnabled: true,
-      domStorageEnabled: true,
-      // Layout optimization
-      loadWithOverviewMode: true,
-      useWideViewPort: true,
-      // Performance optimization
-      hardwareAcceleration: true,
-    // ),
-    // ios: IOSInAppWebViewOptions(
-      allowsInlineMediaPlayback: true,
-      allowsBackForwardNavigationGestures: true,
-      // Cache optimization
-      enableViewportScale: false,
-      // Performance optimization
-      isFraudulentWebsiteWarningEnabled: false,
-      //isPrefetchingEnabled: true,
-    // ),
-  );
-
-
 
   void _showDeviceCategoriesBottomSheet() {
     final isTablet = MediaQuery.of(context).size.width >= 768;
@@ -995,10 +962,9 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
                   alignment: WrapAlignment.center,
                   spacing: 20,
                   runSpacing: 20,
-                  children: deviceCategories.map((category) {
-                    final itemWidth = isTablet
-                        ? screenWidth * 0.2
-                        : (screenWidth / 3) - 30;
+                  children: UrlLists().deviceCategories.map((category) {
+                    final itemWidth =
+                        isTablet ? screenWidth * 0.2 : (screenWidth / 3) - 30;
 
                     return InkWell(
                       onTap: () {
@@ -1019,9 +985,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
                             Text(
                               category.name,
                               textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: isTablet ? 16 : 14
-                              ),
+                              style: TextStyle(fontSize: isTablet ? 16 : 14),
                             ),
                           ],
                         ),
@@ -1036,7 +1000,6 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       ),
     );
   }
-
 
 // Optimize page loading
   void _loadUrl(String url) async {
@@ -1068,7 +1031,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       );
 
       setState(() {
-       // _currentUrl = url;
+        // _currentUrl = url;
         _isLoading = true;
         _progress = 0;
       });
@@ -1089,42 +1052,6 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       );
     }
   }
-
-
-
-
-  void _initWebView() async {
-    
-    //if (Platform.isAndroid) {
-    if(!kDebugMode) {
-      await InAppWebViewController.setWebContentsDebuggingEnabled(false);
-    }
-    // }
-  }
-
-  Future<void> _setupConnectivity() async {
-  //  _connectivitySubscription =
-  //      _connectivity.onConnectivityChanged.listen(_updateConnectionStatus as void Function(List<ConnectivityResult> event)?) as StreamSubscription<ConnectivityResult>;
-  //  _checkInitialConnectivity();
-    var connectionStatus = ConnectionStatusListener.getInstance();
-  await connectionStatus.initialize();
-  
-  //We are checking initial status here. This will handle our app state when
-  //it is started in no internet state.
-  if (!connectionStatus.hasConnection) {
-    _updateConnectionStatus(false, connectionStatus);
-  }
-
-  //This callback will give us any changes in network
-  connectionStatus.connectionChange.listen((event) {
-  //  print("initNoInternetListener $event");
-    _updateConnectionStatus(event, connectionStatus);
-  });
-  }
-
-
-
-
 
   // Updated JavaScript code to include TikTok
   final String _injectedScript = '''
@@ -1151,36 +1078,18 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
         }, true);
       ''';
 
-  // Update onLoadStart for better state management
-  // void _onLoadStart(InAppWebViewController controller, Uri? url) {
-  //   if (mounted) {
-  //     setState(() {
-  //       _isLoading = true;
-  //       _progress = 0;
-  //     });
-  //     //  _injectRemovalScript(controller);
-  //   }
-  // }
-
-
-
-
-
-
-
   bool _shouldHandleExternally(String url) {
     return url.startsWith('whatsapp://') ||
         url.startsWith('intent://') ||
         url.startsWith('fb://') ||
         url.contains('api.whatsapp.com') ||
         //instagram
-        url.contains('instagram.com')||
-
+        url.contains('instagram.com') ||
         url.contains('facebook.com') ||
         url.contains('messenger.com') ||
         url.contains('tiktok.com') ||
-        url.startsWith('snssdk1233://') ||  // TikTok app scheme
-        url.startsWith('tiktoken://');       // Alternative TikTok app scheme
+        url.startsWith('snssdk1233://') || // TikTok app scheme
+        url.startsWith('tiktoken://'); // Alternative TikTok app scheme
   }
 
   Future<void> _handleExternalUrl(String url) async {
@@ -1201,8 +1110,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       if (url.startsWith('intent://')) {
         if (url.contains('browser_fallback_url=')) {
           final fallbackUrl = Uri.decodeFull(
-              url.split('browser_fallback_url=')[1].split(';')[0]
-          );
+              url.split('browser_fallback_url=')[1].split(';')[0]);
           debugPrint('Using Facebook fallback URL: $fallbackUrl');
           await _launchUrl(fallbackUrl);
           return;
@@ -1227,7 +1135,6 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
         debugPrint('Handling URL internally: $url');
         // Add your internal handling logic here
       }
-
     } catch (e) {
       debugPrint('Error handling URL: $e');
       _showToast('Unable to open link');
@@ -1238,7 +1145,8 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
     // Handle various TikTok URL formats
     if (url.startsWith('snssdk1233://') || url.startsWith('tiktoken://')) {
       // Convert app scheme to https
-      return url.replaceFirst(RegExp(r'(snssdk1233|tiktoken)://'), 'https://www.tiktok.com/');
+      return url.replaceFirst(
+          RegExp(r'(snssdk1233|tiktoken)://'), 'https://www.tiktok.com/');
     }
 
     // If it's already a web URL, ensure it's using https
@@ -1273,10 +1181,9 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
           url.contains('facebook.com') ||
           url.contains('messenger.com') ||
           url.contains('tiktok.com') ||
-          url.startsWith('snssdk1233://') ||  // TikTok app scheme
-          url.startsWith('tiktoken://')||       // Alternative TikTok app scheme
+          url.startsWith('snssdk1233://') || // TikTok app scheme
+          url.startsWith('tiktoken://') || // Alternative TikTok app scheme
           url.startsWith('tiktok://')) {
-            
         if (await canLaunchUrl(uri)) {
           await launchUrl(uri, mode: LaunchMode.externalApplication);
         } else {
@@ -1292,6 +1199,7 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       _showToast('Unable to open link');
     }
   }
+
   void _showToast(String message) {
     Fluttertoast.showToast(
       msg: message,
@@ -1302,225 +1210,8 @@ Future<bool> _injectCustomCSS(InAppWebViewController controller) async {
       timeInSecForIosWeb: 5,
     );
   }
-
-
-
-
-
-
-
-  // void _onLoadError(InAppWebViewController controller, Uri? url, int code,
-  //     String message) {
-  //   debugPrint('WebView Error: Code: $code, Message: $message, URL: $url');
-  //   if (mounted) setState(() => _isLoading = false);
-  // }
-
-  // Future<PermissionResponse> _handleAndroidPermissionRequest(
-  //     InAppWebViewController controller,
-  //     String origin,
-  //     PermissionResourceType resources,) async {
-  //   return PermissionResponse(
-  //     resources: [resources],
-  //     action: PermissionResponseAction.GRANT,
-  //   );
-  // }
-
-
-  // Add search dialog implementation
-  // Future<void> _showSearchDialog(BuildContext context) async {
-  //   final TextEditingController searchController = TextEditingController();
-
-  //   return showDialog(
-  //     context: context,
-  //     builder: (context) => AlertDialog(
-  //       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-  //       title: const Text('بحث', style: TextStyle(color: Color(0xFFFEAA00))),
-  //       content: TextField(
-  //         controller: searchController,
-  //         autofocus: true,
-  //         decoration: const InputDecoration(
-  //           hintText: 'ابحث عن منتج...',
-  //           hintStyle: TextStyle(color: Colors.grey),
-  //           enabledBorder: UnderlineInputBorder(
-  //             borderSide: BorderSide(color: Color(0xFFFEAA00)),
-  //           ),
-  //           focusedBorder: UnderlineInputBorder(
-  //             borderSide: BorderSide(color: Color(0xFFFEAA00), width: 2),
-  //           ),
-  //         ),
-  //         onSubmitted: (value) {
-  //           Navigator.pop(context);
-  //           if (value.isNotEmpty) {
-  //             _loadUrl('https://jifirephone.com/search?options%5Bprefix%5D=last&q=${Uri.encodeComponent(value)}');
-  //           }
-  //         },
-  //       ),
-  //       actions: [
-  //         TextButton(
-  //           child: const Text('إلغاء', style: TextStyle(color: Colors.grey)),
-  //           onPressed: () => Navigator.pop(context),
-  //         ),
-  //         TextButton(
-  //           child: const Text('بحث', style: TextStyle(color: Color(0xFFFEAA00))),
-  //           onPressed: () {
-  //             Navigator.pop(context);
-  //             if (searchController.text.isNotEmpty) {
-  //               _loadUrl('https://jifirephone.com/search?options%5Bprefix%5D=last&q=${Uri.encodeComponent(searchController.text)}');
-  //             }
-  //           },
-  //         ),
-  //       ],
-  //     ),
-  //   );
-  // }
-
 }
 
-
-class NoConnectionScreen extends StatelessWidget {
-  final VoidCallback onRetry;
-
-  const NoConnectionScreen({super.key, required this.onRetry});
-
-  // Brand colors
-  static const Color primaryYellow = Color(0xFFFEAA00);
-  static const Color secondaryGray = Color(0xFFE6E6E6);
-  static const Color darkGray = Color(0xFF333333);
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        width: double.infinity,
-        decoration: BoxDecoration(
-          color: Colors.white,
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Colors.white,
-              secondaryGray.withValues(alpha: 0.3),
-            ],
-          ),
-        ),
-        child: SafeArea(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              // Logo/Icon with animation
-              Container(
-                padding: const EdgeInsets.all(30),
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: Colors.white,
-                  boxShadow: [
-                    BoxShadow(
-                      color: primaryYellow.withValues(alpha: 0.2),
-                      blurRadius: 20,
-                      spreadRadius: 5,
-                    ),
-                  ],
-                ),
-                child: const Icon(
-                  Icons.wifi_off_rounded,
-                  size: 60,
-                  color: primaryYellow,
-                ),
-              ),
-
-              const SizedBox(height: 40),
-
-              // Main error message
-              const Text(
-                'لا يوجد اتصال بالإنترنت',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 24,
-                  color: darkGray,
-                  fontWeight: FontWeight.bold,
-                  height: 1.4,
-                ),
-              ),
-
-              const SizedBox(height: 16),
-
-              // Description
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: Text(
-                  'يرجى التحقق من اتصالك بالإنترنت',
-                  textAlign: TextAlign.center,
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: darkGray.withValues(alpha: 0.7),
-                    height: 1.6,
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 48),
-
-              // Retry button with modern design
-              Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 32),
-                child: SizedBox(
-                  width: double.infinity,
-                  height: 56,
-                  child: ElevatedButton(
-                    onPressed: onRetry,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: primaryYellow,
-                      elevation: 0,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                      ),
-                    ),
-                    child: const Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          Icons.refresh_rounded,
-                          color: Colors.white,
-                          size: 22,
-                        ),
-                        SizedBox(width: 12),
-                        Text(
-                          'إعادة المحاولة',
-                          style: TextStyle(
-                            fontSize: 18,
-                            color: Colors.white,
-                            fontWeight: FontWeight.w600,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // Additional help text
-              Padding(
-                padding: const EdgeInsets.only(top: 24),
-                child: TextButton(
-                  onPressed: () {
-                    // Optional: Add additional help or troubleshooting steps
-                  },
-                  child: Text(
-                    'تحتاج مساعدة؟',
-                    style: TextStyle(
-                      color: darkGray.withValues(alpha: 0.7),
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
 // Cache manager for optimized resource handling
 class CacheManager {
   final Map<String, String> _cache = {};
@@ -1546,11 +1237,17 @@ class CacheManager {
   }
 }
 
-
 // Helper class for determining cacheable resources
 class _CacheableResource {
   static bool isCacheable(String url) {
-    final cacheableExtensions = ['.jpg', '.jpeg', '.png', '.gif', '.css', '.js'];
+    final cacheableExtensions = [
+      '.jpg',
+      '.jpeg',
+      '.png',
+      '.gif',
+      '.css',
+      '.js'
+    ];
     return cacheableExtensions.any((ext) => url.toLowerCase().endsWith(ext));
   }
 }
